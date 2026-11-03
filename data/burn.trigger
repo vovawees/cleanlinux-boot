@@ -3,4 +3,5 @@
 path=usr/lib/modules/*/vmlinuz
 path=usr/lib/systemd/boot/efi/*
 path=usr/lib/cleanlinux/initramfs.d/*
-run=/usr/bin/cleanlinux-boot kernel sync
+# $ROOT: "/" on the running system, the target root for burn -r /mnt
+run=/usr/bin/cleanlinux-boot --root $ROOT kernel sync
