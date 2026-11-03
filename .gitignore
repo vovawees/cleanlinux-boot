@@ -1,0 +1,4 @@
+*.o
+/cleanlinux-boot
+/cleanlinux-init
+/cleanlinux-boot-*.tar.gz

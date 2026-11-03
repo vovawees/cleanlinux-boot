@@ -1,0 +1,6 @@
+# /etc/machine-id on the first boot
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg machine-id
+restart = false
+log-type = buffer
+depends-on: early-root-rw

@@ -1,0 +1,7 @@
+# the system clock: local-time RTCs, never earlier than the build; saved at shutdown
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg clock load
+stop-command = /usr/bin/cleanlinux-boot --kmsg clock save
+restart = false
+log-type = buffer
+depends-on: early-mounts

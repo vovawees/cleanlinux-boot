@@ -1,0 +1,7 @@
+# the directories and files of tmpfiles.d in /run and /var
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg tmpfiles --boot --remove
+restart = false
+log-type = buffer
+depends-on: early-fstab
+waits-for: early-machine-id

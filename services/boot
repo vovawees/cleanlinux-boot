@@ -1,0 +1,5 @@
+# the service dinit starts: the system, login prompts, and what "dinitctl enable" adds
+type = internal
+depends-on: system
+waits-for: login
+waits-for.d: /etc/dinit.d/boot.d

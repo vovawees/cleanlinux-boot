@@ -1,0 +1,7 @@
+# the random seed: added to the pool at boot, renewed at boot and at shutdown
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg seed load
+stop-command = /usr/bin/cleanlinux-boot --kmsg seed save
+restart = false
+log-type = buffer
+depends-on: early-fstab

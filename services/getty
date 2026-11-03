@@ -1,0 +1,7 @@
+# a login prompt on a virtual terminal: getty@tty1, getty@tty2, ...
+type = process
+command = /usr/bin/cleanlinux-boot getty $1
+restart = true
+smooth-recovery = true
+termsignal = HUP
+depends-on: system

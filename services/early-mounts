@@ -1,0 +1,5 @@
+# /proc, /sys, /dev, /run and the other API filesystems: the first thing of every boot
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg early-mounts
+restart = false
+log-type = buffer

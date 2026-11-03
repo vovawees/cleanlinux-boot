@@ -1,0 +1,7 @@
+# a login prompt on a serial line: serial-getty@ttyS0 (the speed comes from console=)
+type = process
+command = /usr/bin/cleanlinux-boot getty $1
+restart = true
+smooth-recovery = true
+termsignal = HUP
+depends-on: system

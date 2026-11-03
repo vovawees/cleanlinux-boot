@@ -1,0 +1,8 @@
+# kernel settings of sysctl.d and /etc/sysctl.conf
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg sysctl
+restart = false
+log-type = buffer
+depends-on: early-mounts
+waits-for: early-modules
+waits-for: early-fstab

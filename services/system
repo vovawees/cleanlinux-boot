@@ -1,0 +1,10 @@
+# the system is up: filesystems, devices, kernel settings; services start after this
+type = internal
+depends-on: early-fstab
+waits-for: early-udev-settle
+waits-for: early-modules
+waits-for: early-hostname
+waits-for: early-sysctl
+waits-for: early-seed
+waits-for: early-clock
+waits-for: early-tmpfiles

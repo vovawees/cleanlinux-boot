@@ -1,0 +1,9 @@
+# check the root filesystem while it is still read-only (fsck.mode=skip|force)
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg fsck-root
+restart = false
+options = starts-on-console
+start-timeout = 0
+depends-on: early-mounts
+waits-for: early-udev-settle
+waits-for: early-clock

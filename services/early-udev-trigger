@@ -1,0 +1,6 @@
+# the devices the kernel found before udevd ran, replayed as "add" events
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg udev-trigger
+restart = false
+log-type = buffer
+depends-on: early-udevd

@@ -1,0 +1,7 @@
+# the root read-write; dinit opens its control socket after this one
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg remount-root
+restart = false
+options = starts-rwfs
+log-type = buffer
+depends-on: early-fsck-root

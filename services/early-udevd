@@ -1,0 +1,6 @@
+# the device manager (eudev): device nodes and links, permissions, module loading, hwdb
+type = process
+command = /usr/bin/udevd
+restart = true
+smooth-recovery = true
+depends-on: early-mounts

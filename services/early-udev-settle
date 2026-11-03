@@ -1,0 +1,6 @@
+# wait until udev has handled those events: disks, links in /dev/disk, drivers
+type = scripted
+command = /usr/bin/udevadm settle --timeout=60
+restart = false
+log-type = buffer
+depends-on: early-udev-trigger

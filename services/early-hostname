@@ -1,0 +1,6 @@
+# the host name from /etc/hostname
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg hostname
+restart = false
+log-type = buffer
+depends-on: early-mounts

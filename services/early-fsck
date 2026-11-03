@@ -1,0 +1,9 @@
+# check the other filesystems of /etc/fstab
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg fsck-all
+restart = false
+options = starts-on-console
+start-timeout = 0
+depends-on: early-root-rw
+waits-for: early-udev-settle
+waits-for: early-modules

@@ -1,0 +1,6 @@
+# the modules of modules-load.d and modules-load= on the kernel command line
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg modules
+restart = false
+log-type = buffer
+depends-on: early-mounts

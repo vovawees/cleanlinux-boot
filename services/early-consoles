@@ -1,0 +1,7 @@
+# a serial-getty for each serial console of the kernel (console=ttyS0,115200, SPCR)
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg consoles
+restart = false
+options = pass-cs-fd
+log-type = buffer
+depends-on: system

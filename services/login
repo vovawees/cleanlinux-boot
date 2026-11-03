@@ -1,0 +1,8 @@
+# login prompts on the first virtual terminals and on the serial consoles
+type = internal
+depends-on: system
+waits-for: getty@tty1
+waits-for: getty@tty2
+waits-for: getty@tty3
+waits-for: getty@tty4
+waits-for: early-consoles

@@ -1,0 +1,6 @@
+# mount /etc/fstab (network filesystems later) and enable swap
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg mount-all
+restart = false
+log-type = buffer
+depends-on: early-fsck
