@@ -1,0 +1,3 @@
+#!/bin/sh
+# The quick local checks before every push: git config core.hooksPath tools/hooks
+exec "$(git rev-parse --show-toplevel)/tools/check.sh" --quick

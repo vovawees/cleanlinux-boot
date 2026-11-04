@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Документация · Documentation
+    url: https://github.com/vovawees/CleanLinux/tree/main/docs
+    about: SCOPE, ARCHITECTURE, ROLLING, RECIPES, SPINS, HARDWARE, ROADMAP
+  - name: Доска roadmap · Roadmap board
+    url: https://github.com/users/vovawees/projects/1
+    about: Что уже в работе · what is planned and in progress
+  - name: Уязвимость · Security vulnerability
+    url: https://github.com/vovawees/cleanlinux-boot/security/advisories/new
+    about: Сообщите приватно, не публичным issue · report privately

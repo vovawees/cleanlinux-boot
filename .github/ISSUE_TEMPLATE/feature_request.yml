@@ -1,0 +1,26 @@
+name: Предложение · Feature request
+description: Новая возможность или улучшение · a new feature or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Задача · Problem
+      description: Что сейчас неудобно или невозможно · what is hard or impossible today
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предложение · Proposal
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Слой · Layer (docs/SCOPE.md)
+      options: [core, hardware, platform, сборка · spin, не знаю · not sure]
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы · Alternatives

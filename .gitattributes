@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.gz binary
+*.zst binary
+*.png binary
+# GitHub language statistics: recipes, profiles and spin.conf are bash
+recipe linguist-language=Shell
+*.profile linguist-language=Shell
+spin.conf linguist-language=Shell
+tests/fixtures/** linguist-vendored

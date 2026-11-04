@@ -1,0 +1,41 @@
+name: Ошибка · Bug report
+description: Что-то работает не так · something does not work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось · What happened
+      description: Что делали, что увидели · what you did and what you saw
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить · Steps to reproduce
+      render: sh
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидалось · Expected behaviour
+  - type: input
+    id: version
+    attributes:
+      label: Версия · Version
+      description: "`burn --version`, релиз или коммит · release or commit"
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Архитектура · Architecture
+      options: [x86_64, aarch64, обе · both]
+  - type: input
+    id: profile
+    attributes:
+      label: Профиль и устройство · Profile and device
+      description: "`burn profile show`, `burn profile detect`"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи · Logs
+      description: "build/<arch>/logs, `burn doctor`, dmesg…"
+      render: text
