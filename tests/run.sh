@@ -193,6 +193,66 @@ if [[ -x $INIT ]] && command -v cpio >/dev/null && command -v zstd >/dev/null; t
 	check "initramfs: reproducible" cmp -s "$TMP/a.img" "$TMP/b.img"
 fi
 
+# ---- zram ----
+new_root
+printf 'MemTotal:        3902000 kB\nMemFree:          100000 kB\n' >"$R/proc/meminfo"
+printf 'Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n' >"$R/proc/swaps"
+check "zram: the RAM, at most 8 GiB, zstd, priority 100" test "$(clb zram --print | head -4 | tr '\n' ' ')" = "ram 3810 MiB zram 3810 MiB algorithm zstd priority 100 "
+printf 'MemTotal:       32000000 kB\n' >"$R/proc/meminfo"
+check "zram: capped at max" test "$(clb zram --print | sed -n 2p)" = "zram 8192 MiB"
+mkdir -p "$R/usr/lib/cleanlinux/zram.d" "$R/etc/cleanlinux/zram.d"
+printf 'size = 50%%\nmax = 0\nalgorithm = lz4\n' >"$R/usr/lib/cleanlinux/zram.d/50-profile.conf"
+check "zram: zram.d percentage, no limit, algorithm" test "$(clb zram --print | sed -n 2,3p | tr '\n' ' ')" = "zram 15625 MiB algorithm lz4 "
+printf 'size=2048\n' >"$R/etc/cleanlinux/zram.d/90-local.conf"
+check "zram: /etc wins, size in MiB" test "$(clb zram --print | sed -n 2p)" = "zram 2048 MiB"
+printf 'size=off\n' >"$R/etc/cleanlinux/zram.d/90-local.conf"
+check "zram: off" test "$(clb zram --print | sed -n 2p)" = "zram 0 MiB"
+check "zram start: off is not an error" clb zram start
+rm "$R/etc/cleanlinux/zram.d/90-local.conf"
+printf '/dev/nvme0n1p3\tpartition\t8388604\t0\t-2\n' >>"$R/proc/swaps"
+check "zram: a disk swap is on" test "$(clb zram --print | tail -1 | cut -d' ' -f2)" = yes
+check "zram start: nothing next to a disk swap" clb zram start
+CLEANLINUX_CMDLINE='quiet cleanlinux.zram=1024' check "zram: cleanlinux.zram= wins" test "$(CLEANLINUX_CMDLINE='quiet cleanlinux.zram=1024' clb zram --print | sed -n 2p)" = "zram 1024 MiB"
+
+# ---- backlight ----
+new_root
+mkdir -p "$R/sys/class/backlight/amdgpu_bl0" "$R/sys/class/backlight/acpi_video0" "$R/var/lib"
+printf '200\n' >"$R/sys/class/backlight/amdgpu_bl0/brightness" && printf '255\n' >"$R/sys/class/backlight/amdgpu_bl0/max_brightness"
+printf '3\n' >"$R/sys/class/backlight/acpi_video0/brightness" && printf '100\n' >"$R/sys/class/backlight/acpi_video0/max_brightness"
+clb backlight save
+check "backlight save: one file per device" test "$(cat "$R/var/lib/cleanlinux/backlight/amdgpu_bl0")" = 200
+printf '0\n' >"$R/sys/class/backlight/amdgpu_bl0/brightness" && printf '50\n' >"$R/sys/class/backlight/acpi_video0/brightness"
+clb backlight load
+check "backlight load: restored" test "$(cat "$R/sys/class/backlight/amdgpu_bl0/brightness")" = 200
+check "backlight load: never darker than 5%" test "$(cat "$R/sys/class/backlight/acpi_video0/brightness")" = 5
+rm -r "$R/sys/class/backlight/acpi_video0"
+check "backlight load: a device without a saved value is left alone" clb backlight load
+
+# ---- power ----
+new_root
+P=$R/sys/devices/system/cpu/cpufreq
+mkdir -p "$P/policy0" "$P/policy4" "$R/sys/firmware/acpi" "$R/sys/class/power_supply/BAT0" "$R/sys/class/power_supply/AC" \
+	"$R/sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl" "$R/sys/class/powercap/intel-rapl:0" \
+	"$R/usr/lib/cleanlinux/power.d" "$R/etc/cleanlinux/power.d"
+for f in "$P"/policy{0,4}/{scaling_governor,energy_performance_preference} "$R/sys/firmware/acpi/platform_profile" \
+	"$R/sys/class/power_supply/BAT0/charge_control_end_threshold" \
+	"$R/sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value" \
+	"$R/sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw"; do : >"$f"; done
+check "power: nothing configured, nothing done" clb power
+printf 'platform_profile=balanced\nepp=balance_power\ncharge_limit=90\n' >"$R/usr/lib/cleanlinux/power.d/50-profile.conf"
+printf '# local\ncharge_limit = 80\nfirmware.ppt_pl1_spl=15\nrapl_long=12.5\n' >"$R/etc/cleanlinux/power.d/90-local.conf"
+clb power
+check "power: platform_profile" test "$(cat "$R/sys/firmware/acpi/platform_profile")" = balanced
+check "power: epp on every policy" test "$(cat "$P/policy0/energy_performance_preference")-$(cat "$P/policy4/energy_performance_preference")" = "balance_power-balance_power"
+check "power: /etc wins (charge limit)" test "$(cat "$R/sys/class/power_supply/BAT0/charge_control_end_threshold")" = 80
+check "power: firmware attributes" test "$(cat "$R/sys/class/firmware-attributes/asus-armoury/attributes/ppt_pl1_spl/current_value")" = 15
+check "power: RAPL in microwatts" test "$(cat "$R/sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw")" = 12500000
+check "power: the governor is left alone unless set" test -z "$(cat "$P/policy0/scaling_governor")"
+check "power: missing hardware is not an error" bash -c "printf 'charge_start=60\n' >>'$R/etc/cleanlinux/power.d/90-local.conf' && '$BIN' --root '$R' power"
+printf 'turbo=yes\n' >"$R/etc/cleanlinux/power.d/95-bad.conf"
+check "power: an unknown setting fails" bash -c "! '$BIN' --root '$R' power 2>/dev/null"
+check "power --print" test "$(clb power --print 2>/dev/null | head -2 | tr '\n' ' ')" = "platform_profile=balanced epp=balance_power "
+
 # ---- the services ----
 SVC=$(dirname "$BIN")/services
 DINIT_CHECK=$(command -v dinit-check || true)

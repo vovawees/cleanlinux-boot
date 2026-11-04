@@ -33,6 +33,9 @@ static const struct {
 	{"consoles", cmd_consoles, "start a serial getty on each serial console [--print]"},
 	{"kernel", cmd_kernel, "sync|list: the kernels into the EFI system partition, boot entries"},
 	{"initramfs", cmd_initramfs, "make an initramfs: initramfs [KVER] [-o FILE]"},
+	{"zram", cmd_zram, "start|stop|--print: swap in compressed RAM, sized by the RAM (zram.d)"},
+	{"backlight", cmd_backlight, "load|save the brightness of the backlights"},
+	{"power", cmd_power, "apply power.d: platform profile, CPU governor and EPP, charge and power limits [--print]"},
 	{"shutdown-hook", cmd_shutdown_hook, "swap off, unmount, remount the root read-only"},
 };
 

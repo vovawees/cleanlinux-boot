@@ -8,3 +8,6 @@ waits-for: early-sysctl
 waits-for: early-seed
 waits-for: early-clock
 waits-for: early-tmpfiles
+waits-for: zram
+waits-for: backlight
+waits-for: power

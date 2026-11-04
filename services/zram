@@ -1,0 +1,7 @@
+# swap in compressed RAM sized by the RAM (/etc/cleanlinux/zram.d); none next to a disk swap
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg zram start
+stop-command = /usr/bin/cleanlinux-boot --kmsg zram stop
+restart = false
+log-type = buffer
+depends-on: early-fstab

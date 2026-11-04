@@ -1,0 +1,8 @@
+# the brightness of the backlights: restored at boot (at least 5%), saved at shutdown
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg backlight load
+stop-command = /usr/bin/cleanlinux-boot --kmsg backlight save
+restart = false
+log-type = buffer
+depends-on: early-fstab
+waits-for: early-udev-settle

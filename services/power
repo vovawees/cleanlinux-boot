@@ -1,0 +1,8 @@
+# power settings of /etc/cleanlinux/power.d: platform profile, CPU governor and energy
+# preference, battery charge limits, power limits (firmware attributes, RAPL)
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg power apply
+restart = false
+log-type = buffer
+depends-on: early-mounts
+waits-for: early-udev-settle

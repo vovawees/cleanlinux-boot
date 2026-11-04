@@ -49,5 +49,8 @@ int cmd_getty(int argc, char **argv);
 int cmd_consoles(int argc, char **argv);
 int cmd_kernel(int argc, char **argv);
 int cmd_initramfs(int argc, char **argv);
+int cmd_zram(int argc, char **argv);
+int cmd_backlight(int argc, char **argv);
+int cmd_power(int argc, char **argv);
 
 #endif

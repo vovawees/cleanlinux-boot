@@ -6,7 +6,7 @@
 
 *English summary: dinit services and a small C helper for booting CleanLinux — API filesystems, fsck,
 fstab, udev coldplug, modules via libkmod, sysctl, hostname, random seed, clock, tmpfiles, sysusers, getty on VTs
-and serial consoles, clean shutdown; kernels into the EFI system partition with systemd-boot entries; an
+and serial consoles, swap on zram, backlight, power settings, clean shutdown; kernels into the EFI system partition with systemd-boot entries; an
 optional initramfs (LUKS, modular storage). C17, libkmod, libblkid, libzstd. MIT.*
 
 ## Порядок загрузки
@@ -19,7 +19,7 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
                                                     │
                     early-root-rw (starts-rwfs) ── early-fsck ── early-fstab ─┬─ early-seed
                     early-machine-id, early-sysusers ── early-tmpfiles ◄──────┤  early-sysctl
-                                                                              │
+                                                                              │  zram, backlight, power
                                      system ◄─────────────────────────────────┘
                                        │
               login (getty@tty1..4, early-consoles → serial-getty@ttyS0) ── boot (+ /etc/dinit.d/boot.d)
@@ -53,6 +53,9 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
 | `getty TTY`, `consoles` | agetty на VT и на последовательном порту (скорость из `console=`); serial-getty на каждую последовательную консоль ядра |
 | `kernel sync\|list` | ядра `/usr/lib/modules/*/vmlinuz` в ESP, записи `loader/entries/cleanlinux-*.conf`, systemd-boot как `EFI/BOOT/BOOT<ARCH>.EFI` |
 | `initramfs` | initramfs только там, где без него нельзя |
+| `zram start\|stop\|--print` | swap в сжатой памяти размером с RAM (не больше 8 ГиБ, zstd, приоритет 100) — если нет swap на диске; zswap при этом выключается |
+| `backlight load\|save` | яркость каждой подсветки: сохраняется при выключении, восстанавливается при загрузке (не темнее 5%) |
+| `power [--print]` | настройки питания из `power.d`: профиль платформы, governor и EPP процессора, пороги заряда, лимиты мощности |
 | `shutdown-hook` | swap off, umount, корень только для чтения |
 
 `--root DIR` выполняет команду для другого корня (установщик, сборка образа, тесты).
@@ -86,6 +89,39 @@ files=/usr/bin/cryptsetup
 `rd.break`), его библиотеки, модули с собственным индексом (`depmod -b`) и их firmware. Архив cpio
 отсортирован и датирован `SOURCE_DATE_EPOCH` — одинаковый вход даёт одинаковые байты.
 
+## Память и питание
+
+Настройки железа — текстовые файлы `KEY=VALUE`, а не GUI: `*.conf` в `/etc/cleanlinux/<каталог>`,
+`/run/…`, `/usr/local/lib/…` и `/usr/lib/cleanlinux/<каталог>` (туда кладёт свои значения пакет профиля
+железа `hardware`); файлы читаются по порядку имён, последнее значение ключа побеждает.
+
+`zram.d` (сервис `zram`):
+
+```
+size=100%        # доля RAM или МиБ; 0 или off — без zram (или cleanlinux.zram= в командной строке ядра)
+max=8192         # потолок в МиБ, 0 — без потолка
+algorithm=zstd
+priority=100
+```
+
+Если в fstab есть swap на диске, zram не создаётся: перед дисковым swap работает zswap (он включён в ядре
+CleanLinux по умолчанию).
+
+`power.d` (сервис `power`, после того как udev загрузил драйверы):
+
+```
+platform_profile=balanced        # /sys/firmware/acpi/platform_profile (варианты: platform_profile_choices)
+governor=powersave               # scaling_governor каждого cpufreq policy
+epp=balance_power                # energy_performance_preference (amd-pstate, intel_pstate в режиме active)
+charge_limit=80                  # charge_control_end_threshold каждой батареи
+charge_start=70                  # charge_control_start_threshold
+firmware.ppt_pl1_spl=15          # атрибут firmware-attributes (TDP у asus-armoury, lenovo-wmi, …)
+rapl_long=15                     # Intel RAPL: длительный (PL1) и короткий (PL2) лимит пакета, Вт
+rapl_short=25
+```
+
+Чего железо не умеет, то пропускается с сообщением в журнале; неизвестный ключ — ошибка сервиса.
+
 ## Сборка
 
 ```
@@ -95,4 +131,4 @@ make install DESTDIR=… PREFIX=/usr
 ```
 
 Зависимости: libkmod, libblkid (util-linux), libzstd; во время работы — dinit, eudev, util-linux (agetty,
-fsck, mount, swapon, sulogin, hwclock), kmod.
+fsck, mount, swapon, mkswap, sulogin, hwclock), kmod.

@@ -246,7 +246,7 @@ fail:;
 
 int write_str(const char *path, const char *s)
 {
-	int fd = open(path, O_WRONLY | O_CLOEXEC | O_NOCTTY);
+	int fd = open(path, O_WRONLY | O_TRUNC | O_CLOEXEC | O_NOCTTY); /* O_TRUNC: sysfs ignores it, plain files of other roots need it */
 	if (fd < 0)
 		return -1;
 	size_t len = strlen(s);
