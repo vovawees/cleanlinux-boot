@@ -492,7 +492,10 @@ static int write_cpio(const char *out_path, bool compress)
 	strv_free(&tree);
 	if (o->z)
 		ZSTD_freeCCtx(o->z);
-	bool err = o->error | (fflush(o->f) != 0) | (fsync(fileno(o->f)) != 0);
+	/* every step runs, even after an error: no short-circuit */
+	bool err = o->error;
+	err |= fflush(o->f) != 0;
+	err |= fsync(fileno(o->f)) != 0;
 	err |= fclose(o->f) != 0;
 	free(o);
 	if (err || rename(tmp, out_path) < 0) {
