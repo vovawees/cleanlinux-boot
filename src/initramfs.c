@@ -5,10 +5,14 @@
  *
  * Configuration: *.conf of cleanlinux/initramfs.d in /etc, /run and /usr/lib (profiles),
  * lines of KEY=VALUE, the lists add up:
- *   modules=nvme dm-crypt     modules (or aliases), with their dependencies and firmware
+ *   modules=nvme dm-crypt     modules (or aliases), with their dependencies and firmware,
+ *                             loaded before the root is looked for; a missing one is an error
+ *   optional=panel-foo pwm_bl modules packed when the kernel has them (the drivers of one of
+ *                             several boards), loaded by coldplug for the devices present
  *   files=/usr/bin/cryptsetup programs and files, ELF programs with their libraries
  *   compress=zstd|none
- * Without any modules= or files= no initramfs is wanted ("enable=yes" makes an empty one).
+ * Without any modules= or files= no initramfs is wanted ("enable=yes" makes an empty one);
+ * optional= alone does not make one, it only adds to an initramfs wanted for other reasons.
  *
  * The image: cleanlinux-init as /init, the libraries it needs, the modules with an index of
  * their own (depmod -b), /etc/initramfs/modules, /dev/console — a cpio (newc), sorted,
@@ -32,7 +36,7 @@
 #include <zstd.h>
 
 struct config {
-	strv modules, files;
+	strv modules, optional, files;
 	bool enable, compress;
 };
 
@@ -72,6 +76,8 @@ static void read_config(struct config *c)
 			}
 			if (!strcmp(k, "modules"))
 				split_add(&c->modules, v);
+			else if (!strcmp(k, "optional"))
+				split_add(&c->optional, v);
 			else if (!strcmp(k, "files"))
 				split_add(&c->files, v);
 			else if (!strcmp(k, "enable"))
@@ -92,6 +98,7 @@ bool initramfs_wanted(void)
 	read_config(&c);
 	bool w = c.enable || c.modules.n || c.files.n;
 	strv_free(&c.modules);
+	strv_free(&c.optional);
 	strv_free(&c.files);
 	return w;
 }
@@ -263,14 +270,11 @@ static int add_module(struct kmod_ctx *ctx, struct kmod_module *mod, const char 
 	return rc;
 }
 
-static int add_modules(const char *kver, const strv *names, strv *done)
+/* the modules of the names with their dependencies; a name the kernel has neither as a module
+ * nor built in is an error, unless the names are optional */
+static int add_names(struct kmod_ctx *ctx, const char *kver, const char *moddir, const strv *names, bool optional,
+		     strv *done)
 {
-	char *moddir = xasprintf("%s/usr/lib/modules/%s", root, kver);
-	struct kmod_ctx *ctx = kmod_new(moddir, NULL);
-	if (!ctx) {
-		free(moddir);
-		return -1;
-	}
 	int rc = 0;
 	for (size_t i = 0; i < names->n; i++) {
 		struct kmod_list *list = NULL, *l;
@@ -294,7 +298,7 @@ static int add_modules(const char *kver, const strv *names, strv *done)
 			}
 			free(s);
 			free(b);
-			if (!builtin) {
+			if (!builtin && !optional) {
 				warnx("initramfs: kernel %s has no module %s", kver, names->v[i]);
 				rc = -1;
 			}
@@ -309,6 +313,21 @@ static int add_modules(const char *kver, const strv *names, strv *done)
 		}
 		kmod_module_unref_list(list);
 	}
+	return rc;
+}
+
+static int add_modules(const char *kver, const strv *modules, const strv *optional, strv *done)
+{
+	char *moddir = xasprintf("%s/usr/lib/modules/%s", root, kver);
+	struct kmod_ctx *ctx = kmod_new(moddir, NULL);
+	if (!ctx) {
+		warnx("initramfs: no modules of kernel %s", kver);
+		free(moddir);
+		return modules->n ? -1 : 0;
+	}
+	int rc = add_names(ctx, kver, moddir, modules, false, done);
+	if (add_names(ctx, kver, moddir, optional, true, done) < 0)
+		rc = -1;
 	kmod_unref(ctx);
 	/* the files depmod reads, then an index of exactly these modules */
 	static const char *const keep[] = {"modules.builtin", "modules.builtin.modinfo", "modules.order"};
@@ -564,7 +583,7 @@ int initramfs_build(const char *kver, const char *out_path)
 	for (size_t i = 0; i < c.files.n; i++)
 		if (add_file(c.files.v[i], &done) < 0)
 			rc = -1;
-	if (c.modules.n && add_modules(kver, &c.modules, &done) < 0)
+	if ((c.modules.n || c.optional.n) && add_modules(kver, &c.modules, &c.optional, &done) < 0)
 		rc = -1;
 	char *list = xstrdup("# modules loaded by cleanlinux-init before it looks for the root\n");
 	for (size_t i = 0; i < c.modules.n; i++) {
@@ -581,6 +600,7 @@ int initramfs_build(const char *kver, const char *out_path)
 	nftw(stage, rm_stage, 16, FTW_DEPTH | FTW_PHYS);
 	strv_free(&done);
 	strv_free(&c.modules);
+	strv_free(&c.optional);
 	strv_free(&c.files);
 	return rc;
 }

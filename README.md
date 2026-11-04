@@ -133,9 +133,15 @@ android.partition=/dev/disk/by-partlabel/boot_a
 `/etc/cleanlinux/initramfs.d/` (или `/usr/lib/cleanlinux/initramfs.d/` из пакета профиля):
 
 ```
-modules=nvme dm-crypt
-files=/usr/bin/cryptsetup
+modules=nvme dm-crypt        # загружаются до поиска корня; модуля нет в ядре — ошибка
+files=/usr/bin/cryptsetup    # программы (с их библиотеками) и файлы
+optional=panel-foo pwm_bl    # кладутся, если ядро их собрало; грузит coldplug, если есть устройство
+compress=zstd                # zstd | none
 ```
+
+`optional=` — для профилей, где одно ядро обслуживает много плат (драйверы экранов RK3566): нужный
+драйвер окажется в initramfs и запрос пароля LUKS будет виден на экране, а лишние не мешают. Сам по себе
+`optional=` initramfs не включает — только дополняет нужный по другой причине.
 
 Внутри — `cleanlinux-init` (PID 1: API ФС, модули и coldplug, `rd.luks.uuid=`, ожидание `root=` по
 `/dev/…`, `UUID=`, `LABEL=`, `PARTUUID=`, `PARTLABEL=`, `rootfstype=`, `rootflags=`, `ro`/`rw`, `init=`,

@@ -332,6 +332,29 @@ if [[ -x $INIT ]] && command -v cpio >/dev/null && command -v zstd >/dev/null; t
 	SOURCE_DATE_EPOCH=1 "$BIN" --root "$R" initramfs 1.0 -o "$TMP/a.img" >/dev/null 2>&1
 	SOURCE_DATE_EPOCH=1 "$BIN" --root "$R" initramfs 1.0 -o "$TMP/b.img" >/dev/null 2>&1
 	check "initramfs: reproducible" cmp -s "$TMP/a.img" "$TMP/b.img"
+	# optional= modules: packed when the kernel has them, never an error, wanting no initramfs
+	mkdir -p "$R/usr/lib/modules/1.0/kernel" "$R/esp" && ln -s usr/lib "$R/lib"
+	echo kernel >"$R/usr/lib/modules/1.0/vmlinuz"
+	printf 'optional=no-such-panel\n' >"$R/etc/cleanlinux/initramfs.d/test.conf"
+	clb kernel sync --esp "$R/esp" >/dev/null 2>&1
+	check "initramfs: optional= alone wants none" test ! -e "$R/var/lib/cleanlinux/initramfs/1.0.img"
+	printf 'enable=yes\noptional=no-such-panel\n' >"$R/etc/cleanlinux/initramfs.d/test.conf"
+	check "initramfs: a missing optional= module is no error" bash -c "'$BIN' --root '$R' initramfs 1.0 -o '$TMP/o.img' >/dev/null 2>&1"
+	printf 'modules=no-such-driver\n' >"$R/etc/cleanlinux/initramfs.d/test.conf"
+	check "initramfs: a missing modules= module is an error" bash -c "! '$BIN' --root '$R' initramfs 1.0 -o '$TMP/m.img' >/dev/null 2>&1"
+	if command -v depmod >/dev/null && command -v cc >/dev/null; then
+		# an object with a .modinfo is a module as far as depmod is concerned
+		printf 'static const char __attribute__((section(".modinfo"), used, aligned(1))) m%d[] = "%s";\n' \
+			1 license=MIT 2 'alias=of:N*T*Cvendor,panel' >"$TMP/panel.c"
+		cc -c "$TMP/panel.c" -o "$R/usr/lib/modules/1.0/kernel/panel-vendor.ko"
+		depmod -b "$R" 1.0 2>/dev/null
+		printf 'enable=yes\noptional=panel-vendor no-such-panel\n' >"$R/etc/cleanlinux/initramfs.d/test.conf"
+		"$BIN" --root "$R" initramfs 1.0 -o "$TMP/p.img" >/dev/null 2>&1
+		list=$(zstd -dc "$TMP/p.img" | cpio -it 2>/dev/null)
+		check "initramfs: an optional= module the kernel has is packed" grep -qx 'usr/lib/modules/1.0/kernel/panel-vendor.ko' <<<"$list"
+		check "initramfs: with an index for coldplug" grep -qx 'usr/lib/modules/1.0/modules.alias.bin' <<<"$list"
+		check "initramfs: optional= modules are not in the load list" bash -c "! zstd -dc '$TMP/p.img' | cpio -i --to-stdout etc/initramfs/modules 2>/dev/null | grep -q panel"
+	fi
 fi
 
 # ---- zram ----
