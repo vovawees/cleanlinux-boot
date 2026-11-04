@@ -31,7 +31,7 @@ static const struct {
 	{"sysusers", cmd_sysusers, "add the system users and groups of sysusers.d [FILE...]"},
 	{"getty", cmd_getty, "run agetty on a terminal: getty TTY"},
 	{"consoles", cmd_consoles, "start a serial getty on each serial console [--print]"},
-	{"kernel", cmd_kernel, "sync|list: the kernels into the EFI system partition, boot entries"},
+	{"kernel", cmd_kernel, "sync|list|config: the kernels for the loaders of boot.d (systemd-boot, extlinux, rpi, android)"},
 	{"initramfs", cmd_initramfs, "make an initramfs: initramfs [KVER] [-o FILE]"},
 	{"zram", cmd_zram, "start|stop|--print: swap in compressed RAM, sized by the RAM (zram.d)"},
 	{"backlight", cmd_backlight, "load|save the brightness of the backlights"},

@@ -2,12 +2,15 @@
 
 Загрузка [CleanLinux](https://github.com/vovawees/CleanLinux) под [dinit](https://github.com/davmac314/dinit):
 декларативные сервисы и один небольшой помощник на C вместо shell-скриптов. Плюс всё, что нужно ядру на
-пути к экрану входа: ядро и записи systemd-boot в ESP, маленький initramfs для тех, кому он нужен.
+пути к экрану входа: ядро в загрузочный раздел под загрузчик устройства (systemd-boot, U-Boot extlinux,
+прошивка Raspberry Pi, Android boot.img), маленький initramfs для тех, кому он нужен.
 
 *English summary: dinit services and a small C helper for booting CleanLinux — API filesystems, fsck,
 fstab, udev coldplug, modules via libkmod, sysctl, hostname, random seed, clock, tmpfiles, sysusers, getty on VTs
-and serial consoles, swap on zram, backlight, power settings, clean shutdown; kernels into the EFI system partition with systemd-boot entries; an
-optional initramfs (LUKS, modular storage). C17, libkmod, libblkid, libzstd. MIT.*
+and serial consoles, swap on zram, backlight, power settings, clean shutdown; kernels into the boot partition for the
+loader of the device (systemd-boot entries, U-Boot extlinux.conf, Raspberry Pi config.txt, Android boot images v0–v2 with
+safe flashing), device trees and overlays; an optional initramfs (LUKS, modular storage). C17, libkmod, libblkid,
+libzstd. MIT.*
 
 ## Порядок загрузки
 
@@ -51,7 +54,7 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
 | `tmpfiles` | общее подмножество `tmpfiles.d(5)`: `d D f w L z r R`, модификаторы `! - +` |
 | `sysusers` | системные пользователи и группы из `sysusers.d(5)` (`u g m`, `r` принимается): недостающие дописываются в `passwd`, `shadow`, `group`, `gshadow` со свободными ID из `SYS_UID_MIN..SYS_UID_MAX`; учётные записи заблокированы |
 | `getty TTY`, `consoles` | agetty на VT и на последовательном порту (скорость из `console=`); serial-getty на каждую последовательную консоль ядра |
-| `kernel sync\|list` | ядра `/usr/lib/modules/*/vmlinuz` в ESP, записи `loader/entries/cleanlinux-*.conf`, systemd-boot как `EFI/BOOT/BOOT<ARCH>.EFI` |
+| `kernel sync\|list\|config` | ядра `/usr/lib/modules/*/vmlinuz` в загрузочный раздел под загрузчики из `boot.d`: записи systemd-boot, `extlinux.conf`, `config.txt` Raspberry Pi, Android boot.img; `config` — итоговые настройки |
 | `initramfs` | initramfs только там, где без него нельзя |
 | `zram start\|stop\|--print` | swap в сжатой памяти размером с RAM (не больше 8 ГиБ, zstd, приоритет 100) — если нет swap на диске; zswap при этом выключается |
 | `backlight load\|save` | яркость каждой подсветки: сохраняется при выключении, восстанавливается при загрузке (не темнее 5%) |
@@ -62,13 +65,63 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
 
 ## Ядро и загрузчик
 
-`cleanlinux-boot kernel sync` находит смонтированный ESP (`/efi`, `/boot` или `/boot/efi`, vfat) или берёт
-`--esp DIR`, копирует каждое установленное ядро в `ESP/cleanlinux/<версия>/linux` и пишет запись
-systemd-boot. Командная строка ядра — `/etc/kernel/cmdline`, затем фрагменты `kernel/cmdline.d/*.conf`
-(`/etc`, `/run`, `/usr/lib` — их ставят профили железа) и `/usr/lib/modules/<версия>/cmdline` из профиля
-сборки ядра. Записи и ядра, которых больше нет, удаляются; неизменившиеся файлы не переписываются.
-burn запускает это сам после каждой транзакции, которая затронула ядро, systemd-boot или настройки
-initramfs (`/usr/share/burn/triggers/cleanlinux-boot.trigger`).
+`cleanlinux-boot kernel sync` находит смонтированный загрузочный раздел (`/efi`, `/boot` или `/boot/efi`,
+vfat — ESP) или берёт `--esp DIR`, копирует каждое установленное ядро в `ESP/cleanlinux/<версия>/` и пишет
+то, что читает загрузчик устройства. Командная строка ядра — `/etc/kernel/cmdline`, затем фрагменты
+`kernel/cmdline.d/*.conf` (`/etc`, `/run`, `/usr/lib` — их ставит пакет `hardware` из `KERNEL_CMDLINE` профиля) и
+`/usr/lib/modules/<версия>/cmdline`. Записи, ядра и файлы, которые больше не нужны, удаляются;
+неизменившиеся файлы не переписываются. burn запускает это сам после каждой транзакции, которая затронула
+ядро, systemd-boot, настройки загрузчика или initramfs (`/usr/share/burn/triggers/cleanlinux-boot.trigger`).
+
+### Загрузчик устройства: `boot.d`
+
+Чем грузится устройство, описывают файлы `cleanlinux/boot.d/*.conf` (`/etc`, `/run`, `/usr/lib`; пакет
+`hardware` кладёт `/usr/lib/cleanlinux/boot.d/50-profile.conf` из `BOOTLOADER` и `DEVICE_TREE` профиля,
+свои настройки — в `/etc/cleanlinux/boot.d/`, позже по имени — главнее). Без них — systemd-boot, как раньше.
+
+```ini
+loader=extlinux                     # systemd-boot | extlinux | rpi | android | none; можно несколько
+devicetree=rockchip/rk3566-anbernic-rg353p.dtb   # из /usr/lib/modules/<версия>/dtbs; rockchip/ — весь каталог
+overlays=rockchip/overlay/x.dtbo    # оверлеи device tree
+default=                            # версия ядра по умолчанию (иначе — самое новое)
+timeout=3                           # секунды (extlinux)
+image=                              # файл ядра для не-UEFI загрузчиков (иначе Image, если есть, или vmlinuz)
+```
+
+| `loader=` | Что пишется |
+|---|---|
+| `systemd-boot` | `loader/entries/cleanlinux-<версия>.conf` (`linux`, `initrd`, `devicetree`, `devicetree-overlay`, `options`), systemd-boot как `EFI/BOOT/BOOT<ARCH>.EFI` |
+| `extlinux` | `extlinux/extlinux.conf` для U-Boot: ядро по умолчанию первым, потом остальные от новых к старым; `linux`, `initrd`, `fdt` (или `fdtdir` для каталога — U-Boot сам возьмёт свой `$fdtfile`), `fdtoverlays`, `append` |
+| `rpi` | `config.txt` прошивки Raspberry Pi: `os_prefix=cleanlinux/<версия>/` ядра по умолчанию, `kernel=`, `initramfs … followkernel`, `device_tree=`, `dtoverlay=`; рядом с ядром — `cmdline.txt`, `.dtb` и `overlays/`; свои настройки прошивки — в `usercfg.txt` (он подключается) |
+| `android` | `/var/lib/cleanlinux/android/<версия>.img` — Android boot image (ABL Qualcomm и подобные), см. ниже |
+
+`extlinux.conf` и `config.txt`, которые написал не cleanlinux-boot (без его первой строки), не трогаются:
+`kernel sync` предупреждает и завершается с ошибкой, пока чужой файл не убран. На arm64 `vmlinuz` — программа
+EFI (для systemd-boot), а U-Boot и прошивка Raspberry Pi получают `/usr/lib/modules/<версия>/Image`.
+
+### Android boot image
+
+Для устройств, где ядро грузит загрузчик Android (ABL на Snapdragon и т. п.), `loader=android` собирает
+boot.img в формате `mkbootimg` (заголовок версий 0, 1, 2; id — SHA-1 секций, как у AOSP): ядро (`Image`, сжатое
+gzip), initramfs, если он нужен, и device tree — отдельной секцией в версии 2 или в конце ядра
+(`Image.gz-dtb`) в версиях 0 и 1. Загрузочный раздел ESP для этого не нужен.
+
+```ini
+android.header=2                    # 0, 1 или 2 (2 требует devicetree=)
+android.pagesize=4096
+android.base=0x10000000             # и android.kernel_offset, ramdisk_offset, tags_offset, dtb_offset (как у mkbootimg)
+android.os_version=13.0.0           # если загрузчик их проверяет
+android.os_patch_level=2024-05
+android.compress=gzip               # gzip | none
+android.partition=/dev/disk/by-partlabel/boot_a
+```
+
+С `android.partition` образ ядра по умолчанию прошивается в раздел, но только на работающей системе (с
+`--root` — лишь по `--flash`), только если в разделе уже лежит Android boot image (`ANDROID!`) или он пуст,
+только если образ влезает и отличается от записанного. Перед первой прошивкой всё содержимое раздела
+сохраняется в `/var/lib/cleanlinux/android/<раздел>.orig` — вернуть стоковое ядро можно
+`dd if=/var/lib/cleanlinux/android/boot_a.orig of=/dev/disk/by-partlabel/boot_a`. `--dry-run` показывает, что
+было бы записано и прошито.
 
 Так же burn вызывает `cleanlinux-boot sysusers` после установки пакета с файлом в `/usr/lib/sysusers.d`
 (`cleanlinux-sysusers.trigger`): пользователь `dhcpcd` или `messagebus` появляется вместе с пакетом, а

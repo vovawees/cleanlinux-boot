@@ -173,6 +173,147 @@ clb kernel sync --esp "$E" >/dev/null 2>&1
 check "kernel: unchanged files are not rewritten" test "$(stat -c %Y.%i "$E/cleanlinux/7.3.0-a/linux")" = "$before"
 check "kernel: list" bash -c "'$BIN' --root '$R' kernel list | grep -q '^7.3.0-a	root=PARTUUID=1234'"
 
+# ---- boot loaders: cleanlinux/boot.d ----
+new_root
+K=$R/usr/lib/modules E=$R/esp
+mkdir -p "$R/etc/kernel" "$E" "$R/usr/lib/cleanlinux/boot.d" "$R/etc/cleanlinux/boot.d"
+for v in 7.3.0-a 7.10.0-b; do
+	mkdir -p "$K/$v/dtbs/rockchip/overlay"
+	echo "efi-$v" >"$K/$v/vmlinuz" && echo "image-$v" >"$K/$v/Image"
+	echo "dtb-$v" >"$K/$v/dtbs/rockchip/rk3566-x.dtb" && echo "dtb2-$v" >"$K/$v/dtbs/rockchip/rk3566-y.dtb"
+	echo "ovl-$v" >"$K/$v/dtbs/rockchip/overlay/spi.dtbo"
+done
+echo 'root=PARTUUID=42 rw' >"$R/etc/kernel/cmdline"
+printf 'loader=extlinux\ndevicetree=rockchip/rk3566-x.dtb\noverlays=rockchip/overlay/spi.dtbo\ntimeout=5\n' \
+	>"$R/usr/lib/cleanlinux/boot.d/50-profile.conf"
+clb kernel sync --esp "$E" >/dev/null 2>&1
+X=$E/extlinux/extlinux.conf
+check "extlinux: the newest kernel (by version) is the default" grep -qx 'default cleanlinux-7.10.0-b' "$X"
+check "extlinux: the newest first" test "$(grep -m1 '^label' "$X")" = "label cleanlinux-7.10.0-b"
+check "extlinux: the Image, not the EFI vmlinuz" grep -qx '	linux /cleanlinux/7.10.0-b/Image' "$X"
+check "extlinux: Image copied, no EFI kernel" test "$(cat "$E/cleanlinux/7.10.0-b/Image")" = image-7.10.0-b -a ! -e "$E/cleanlinux/7.10.0-b/linux"
+check "extlinux: device tree" grep -qx '	fdt /cleanlinux/7.10.0-b/dtbs/rockchip/rk3566-x.dtb' "$X"
+check "extlinux: device tree copied" test "$(cat "$E/cleanlinux/7.10.0-b/dtbs/rockchip/rk3566-x.dtb")" = dtb-7.10.0-b
+check "extlinux: overlays" grep -qx '	fdtoverlays /cleanlinux/7.3.0-a/dtbs/rockchip/overlay/spi.dtbo' "$X"
+check "extlinux: command line" grep -qx '	append root=PARTUUID=42 rw' "$X"
+check "extlinux: timeout in tenths of a second" grep -qx 'timeout 50' "$X"
+check "extlinux: no systemd-boot entries" test ! -e "$E/loader/entries/cleanlinux-7.10.0-b.conf"
+check "kernel config: the settings" bash -c "'$BIN' --root '$R' kernel config | grep -qx 'loader=extlinux'"
+# /etc wins over the profile: default=, a directory of device trees (U-Boot picks its $fdtfile)
+printf 'default=7.3.0-a\ndevicetree=rockchip/\noverlays=\n' >"$R/etc/cleanlinux/boot.d/90-local.conf"
+clb kernel sync --esp "$E" >/dev/null 2>&1
+check "extlinux: default=" grep -qx 'default cleanlinux-7.3.0-a' "$X"
+check "extlinux: the default kernel first" test "$(grep -m1 '^label' "$X")" = "label cleanlinux-7.3.0-a"
+check "extlinux: fdtdir" grep -qx '	fdtdir /cleanlinux/7.3.0-a/dtbs' "$X"
+check "extlinux: the device trees of the directory" test -f "$E/cleanlinux/7.3.0-a/dtbs/rockchip/rk3566-y.dtb"
+check "extlinux: overlays= empties the list" bash -c "! grep -q fdtoverlays '$X'"
+check "boot.d: no way out of dtbs/" bash -c "printf 'devicetree=../../../etc/shadow\n' >'$R/etc/cleanlinux/boot.d/95-bad.conf' && '$BIN' --root '$R' kernel config 2>&1 | grep -q 'a path below'"
+rm -f "$R/etc/cleanlinux/boot.d/95-bad.conf"
+# systemd-boot with a device tree and an overlay
+printf 'loader=systemd-boot\ndevicetree=rockchip/rk3566-x.dtb\noverlays=rockchip/overlay/spi.dtbo\n' >"$R/etc/cleanlinux/boot.d/90-local.conf"
+clb kernel sync --esp "$E" >/dev/null 2>&1
+S=$E/loader/entries/cleanlinux-7.10.0-b.conf
+check "systemd-boot: devicetree" grep -qx 'devicetree /cleanlinux/7.10.0-b/dtbs/rockchip/rk3566-x.dtb' "$S"
+check "systemd-boot: devicetree-overlay" grep -qx 'devicetree-overlay /cleanlinux/7.10.0-b/dtbs/rockchip/overlay/spi.dtbo' "$S"
+check "systemd-boot: the EFI vmlinuz only" test "$(cat "$E/cleanlinux/7.10.0-b/linux")" = efi-7.10.0-b -a ! -e "$E/cleanlinux/7.10.0-b/Image"
+check "extlinux.conf removed with its loader" test ! -e "$X"
+# the Raspberry Pi firmware
+printf 'loader=rpi\ndevicetree=rockchip/rk3566-x.dtb\noverlays=rockchip/overlay/spi.dtbo\n' >"$R/etc/cleanlinux/boot.d/90-local.conf"
+clb kernel sync --esp "$E" >/dev/null 2>&1
+C=$E/config.txt
+check "rpi: os_prefix of the default kernel" grep -qx 'os_prefix=cleanlinux/7.10.0-b/' "$C"
+check "rpi: kernel" grep -qx 'kernel=Image' "$C"
+check "rpi: device tree" grep -qx 'device_tree=rk3566-x.dtb' "$C"
+check "rpi: overlay" grep -qx 'dtoverlay=spi' "$C"
+check "rpi: device tree and overlays/ next to the kernel" test -f "$E/cleanlinux/7.10.0-b/rk3566-x.dtb" -a -f "$E/cleanlinux/7.10.0-b/overlays/spi.dtbo"
+check "rpi: cmdline.txt of each kernel" test "$(cat "$E/cleanlinux/7.3.0-a/cmdline.txt")" = "root=PARTUUID=42 rw"
+check "rpi: usercfg.txt for the firmware settings" grep -qx 'include usercfg.txt' "$C"
+check "rpi: no systemd-boot entries" test ! -e "$S"
+echo '# mine' >"$C.mine" && printf 'loader=extlinux\n' >"$R/etc/cleanlinux/boot.d/90-local.conf"
+clb kernel sync --esp "$E" >/dev/null 2>&1
+check "rpi: config.txt removed with its loader" test ! -e "$C"
+mv "$C.mine" "$C" && printf 'loader=rpi\n' >"$R/etc/cleanlinux/boot.d/90-local.conf"
+check "rpi: a config.txt of someone else is left alone" bash -c "! '$BIN' --root '$R' kernel sync --esp '$E' >/dev/null 2>&1 && test \"\$(cat '$C')\" = '# mine'"
+printf 'loader=none\n' >"$R/etc/cleanlinux/boot.d/90-local.conf"
+clb kernel sync --esp "$E" >/dev/null 2>&1
+check "loader=none: the boot partition is not touched" test -f "$E/cleanlinux/7.10.0-b/cmdline.txt"
+
+# ---- Android boot images ----
+new_root
+K=$R/usr/lib/modules
+mkdir -p "$K/7.3.0-a/dtbs/qcom" "$R/etc/kernel" "$R/etc/cleanlinux/boot.d"
+head -c 5000 < <(yes kernel) >"$K/7.3.0-a/Image" && echo efi >"$K/7.3.0-a/vmlinuz"
+printf 'dtb!' >"$K/7.3.0-a/dtbs/qcom/board.dtb"
+echo 'root=PARTLABEL=linux rw' >"$R/etc/kernel/cmdline"
+printf '%s\n' loader=android devicetree=qcom/board.dtb android.compress=none android.pagesize=2048 \
+	android.os_version=13.0.0 android.os_patch_level=2024-05 >"$R/etc/cleanlinux/boot.d/50-android.conf"
+clb kernel sync >/dev/null 2>&1
+A=$R/var/lib/cleanlinux/android/7.3.0-a.img
+u32() { od -An -tu4 -j "$2" -N4 "$1" | tr -d ' '; }
+check "android: an image, no boot partition needed" test -f "$A"
+check "android: ANDROID!" test "$(head -c 8 "$A")" = 'ANDROID!'
+check "android: header 2, page size, kernel size" test "$(u32 "$A" 40) $(u32 "$A" 36) $(u32 "$A" 8)" = "2 2048 5000"
+check "android: the command line" test "$(dd if="$A" bs=1 skip=64 count=24 2>/dev/null | tr -d '\0')" = 'root=PARTLABEL=linux rw'
+check "android: the device tree section" test "$(u32 "$A" 1648)" = 4
+if command -v python3 >/dev/null; then
+	verify_bootimg() { # IMAGE KERNEL DTB OS_VERSION: the layout and id of AOSP mkbootimg
+		python3 - "$@" <<'PY'
+import hashlib, struct, sys
+img = open(sys.argv[1], 'rb').read()
+kernel, dtb = open(sys.argv[2], 'rb').read(), open(sys.argv[3], 'rb').read()
+ks, ka, rs, ra, ss, sa, tags, page, hv, osv = struct.unpack_from('<10I', img, 8)
+hsize = (1632, 1648, 1660)[hv]
+if hv >= 1:
+    assert struct.unpack_from('<IQI', img, 1632) == (0, 0, hsize)
+ds = struct.unpack_from('<I', img, 1648)[0] if hv == 2 else 0
+pad = lambda n: (n + page - 1) // page * page
+off = pad(hsize)
+k = img[off:off + ks]; off += pad(ks)
+r = img[off:off + rs]; off += pad(rs)
+d = img[off:off + ds]; off += pad(ds)
+assert len(img) == off, 'size'
+assert k == (kernel if hv == 2 else kernel + dtb), 'kernel'
+assert hv < 2 or d == dtb, 'dtb'
+sha = hashlib.sha1()
+for blob in [k, r, b''] + ([b''] if hv > 0 else []) + ([d] if hv > 1 else []):
+    sha.update(blob)
+    sha.update(struct.pack('<I', len(blob)))
+assert img[576:608] == sha.digest() + bytes(12), 'id'
+assert osv == int(sys.argv[4]), 'os version'
+assert (ka, ra, sa, tags) == (0x10008000, 0x11000000 if rs else 0, 0, 0x10000100), 'addresses'
+PY
+	}
+	check "android: the layout and id of mkbootimg (header 2)" verify_bootimg "$A" "$K/7.3.0-a/Image" "$K/7.3.0-a/dtbs/qcom/board.dtb" $(((13 << 14 << 11) | (24 << 4 | 5)))
+	printf 'android.header=0\n' >"$R/etc/cleanlinux/boot.d/60-v0.conf"
+	clb kernel sync >/dev/null 2>&1
+	check "android: header 0, the device tree appended to the kernel" verify_bootimg "$A" "$K/7.3.0-a/Image" "$K/7.3.0-a/dtbs/qcom/board.dtb" $(((13 << 14 << 11) | (24 << 4 | 5)))
+	rm "$R/etc/cleanlinux/boot.d/60-v0.conf"
+fi
+if command -v gzip >/dev/null; then
+	printf 'android.compress=gzip\n' >"$R/etc/cleanlinux/boot.d/60-gzip.conf"
+	clb kernel sync >/dev/null 2>&1
+	check "android: the kernel gzip-ed" test "$(od -An -tx1 -j 2048 -N2 "$A" | tr -d ' ')" = 1f8b
+	rm "$R/etc/cleanlinux/boot.d/60-gzip.conf"
+	clb kernel sync >/dev/null 2>&1
+fi
+P=$TMP/boot_a
+head -c 1048576 /dev/zero >"$P"
+printf 'android.partition=%s\n' "$P" >"$R/etc/cleanlinux/boot.d/70-flash.conf"
+clb kernel sync >/dev/null 2>&1
+check "android: not flashed with --root" test -z "$(head -c 8 "$P" | tr -d '\0')"
+clb kernel sync --flash >/dev/null 2>&1
+check "android: flashed with --flash" cmp -s -n "$(stat -c %s "$A")" "$A" "$P"
+check "android: the former partition kept" cmp -s "$R/var/lib/cleanlinux/android/boot_a.orig" <(head -c 1048576 /dev/zero)
+check "android: flashed only when it changed" bash -c "! '$BIN' --root '$R' kernel sync --flash 2>&1 | grep -q flashing"
+printf 'XXXXXXXX' | dd of="$P" conv=notrunc 2>/dev/null
+check "android: a partition without a boot image is not written" bash -c "! '$BIN' --root '$R' kernel sync --flash >/dev/null 2>&1 && test \"\$(head -c 8 '$P')\" = XXXXXXXX"
+head -c 4096 /dev/zero >"$P"
+check "android: an image larger than the partition is not written" bash -c "! '$BIN' --root '$R' kernel sync --flash >/dev/null 2>&1"
+mkdir -p "$K/7.4.0-c" && cp "$K/7.3.0-a/Image" "$K/7.3.0-a/vmlinuz" "$K/7.4.0-c/" && mkdir -p "$K/7.4.0-c/dtbs" && cp -r "$K/7.3.0-a/dtbs/qcom" "$K/7.4.0-c/dtbs/"
+rm -rf "$K/7.3.0-a" "$R/etc/cleanlinux/boot.d/70-flash.conf"
+clb kernel sync >/dev/null 2>&1
+check "android: images of removed kernels go, the backup stays" test ! -e "$A" -a -f "$R/var/lib/cleanlinux/android/7.4.0-c.img" -a -f "$R/var/lib/cleanlinux/android/boot_a.orig"
+
 # ---- initramfs ----
 INIT=$(dirname "$BIN")/cleanlinux-init
 if [[ -x $INIT ]] && command -v cpio >/dev/null && command -v zstd >/dev/null; then

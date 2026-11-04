@@ -28,6 +28,25 @@ int modules_coldplug(struct kmod_ctx *ctx);
 bool initramfs_wanted(void);
 int initramfs_build(const char *kver, const char *out_path);
 
+/* bootimg.c: Android boot images (mkbootimg header versions 0, 1 and 2) */
+#include <stdint.h>
+typedef struct {
+	unsigned header_version;
+	size_t page_size;
+	uint32_t base, kernel_offset, ramdisk_offset, tags_offset, dtb_offset;
+	uint32_t os_version; /* bootimg_os_version */
+	const char *board, *cmdline;
+	const void *kernel, *ramdisk, *dtb; /* dtb: its own section with header version 2 */
+	size_t kernel_len, ramdisk_len, dtb_len;
+} bootimg;
+/* the image (malloc-ed, *len bytes), or NULL with *err (malloc-ed) */
+void *bootimg_build(const bootimg *bi, size_t *len, char **err);
+/* "13.0.0" and "2024-05" packed as in the header; -1 with *err when malformed */
+int bootimg_os_version(const char *version, const char *patch_level, uint32_t *out, char **err);
+/* IMG to the start of the partition DEV, when DEV holds an Android boot image (or zeros) and the
+ * image fits; the first flash saves DEV into BACKUP. 0 also when DEV holds IMG already */
+int bootimg_flash(const void *img, size_t len, const char *dev, const char *backup, bool dry_run);
+
 /* commands: cleanlinux-boot <command> [args] */
 int cmd_early_mounts(int argc, char **argv);
 int cmd_fsck_root(int argc, char **argv);
