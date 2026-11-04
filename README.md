@@ -5,7 +5,7 @@
 пути к экрану входа: ядро и записи systemd-boot в ESP, маленький initramfs для тех, кому он нужен.
 
 *English summary: dinit services and a small C helper for booting CleanLinux — API filesystems, fsck,
-fstab, udev coldplug, modules via libkmod, sysctl, hostname, random seed, clock, tmpfiles, getty on VTs
+fstab, udev coldplug, modules via libkmod, sysctl, hostname, random seed, clock, tmpfiles, sysusers, getty on VTs
 and serial consoles, clean shutdown; kernels into the EFI system partition with systemd-boot entries; an
 optional initramfs (LUKS, modular storage). C17, libkmod, libblkid, libzstd. MIT.*
 
@@ -18,7 +18,7 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
               └────────────────────────────── early-fsck-root ◄─────────┘
                                                     │
                     early-root-rw (starts-rwfs) ── early-fsck ── early-fstab ─┬─ early-seed
-                    early-machine-id ── early-tmpfiles ◄──────────────────────┤  early-sysctl
+                    early-machine-id, early-sysusers ── early-tmpfiles ◄──────┤  early-sysctl
                                                                               │
                                      system ◄─────────────────────────────────┘
                                        │
@@ -49,6 +49,7 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
 | `clock load\|save` | RTC в локальном времени (`LOCAL` в adjtime), часы не раньше сборки и не раньше последнего выключения |
 | `machine-id` | `/etc/machine-id` при первой загрузке |
 | `tmpfiles` | общее подмножество `tmpfiles.d(5)`: `d D f w L z r R`, модификаторы `! - +` |
+| `sysusers` | системные пользователи и группы из `sysusers.d(5)` (`u g m`, `r` принимается): недостающие дописываются в `passwd`, `shadow`, `group`, `gshadow` со свободными ID из `SYS_UID_MIN..SYS_UID_MAX`; учётные записи заблокированы |
 | `getty TTY`, `consoles` | agetty на VT и на последовательном порту (скорость из `console=`); serial-getty на каждую последовательную консоль ядра |
 | `kernel sync\|list` | ядра `/usr/lib/modules/*/vmlinuz` в ESP, записи `loader/entries/cleanlinux-*.conf`, systemd-boot как `EFI/BOOT/BOOT<ARCH>.EFI` |
 | `initramfs` | initramfs только там, где без него нельзя |
@@ -65,6 +66,10 @@ systemd-boot. Командная строка ядра — `/etc/kernel/cmdline`
 сборки ядра. Записи и ядра, которых больше нет, удаляются; неизменившиеся файлы не переписываются.
 burn запускает это сам после каждой транзакции, которая затронула ядро, systemd-boot или настройки
 initramfs (`/usr/share/burn/triggers/cleanlinux-boot.trigger`).
+
+Так же burn вызывает `cleanlinux-boot sysusers` после установки пакета с файлом в `/usr/lib/sysusers.d`
+(`cleanlinux-sysusers.trigger`): пользователь `dhcpcd` или `messagebus` появляется вместе с пакетом, а
+сервис `early-sysusers` при загрузке добавляет тех, кого почему-то нет.
 
 ## initramfs
 

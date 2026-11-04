@@ -28,6 +28,7 @@ static const struct {
 	{"clock", cmd_clock, "load|save the system clock (RTC, adjtime, never before the build)"},
 	{"machine-id", cmd_machine_id, "create /etc/machine-id on the first boot"},
 	{"tmpfiles", cmd_tmpfiles, "create the files of tmpfiles.d [--boot] [--remove]"},
+	{"sysusers", cmd_sysusers, "add the system users and groups of sysusers.d [FILE...]"},
 	{"getty", cmd_getty, "run agetty on a terminal: getty TTY"},
 	{"consoles", cmd_consoles, "start a serial getty on each serial console [--print]"},
 	{"kernel", cmd_kernel, "sync|list: the kernels into the EFI system partition, boot entries"},

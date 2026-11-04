@@ -93,6 +93,37 @@ fi
 printf 'd /run/x 0755 nosuchuser - -\n' >"$R/etc/tmpfiles.d/owned.conf"
 check "tmpfiles: an unknown user is reported" bash -c "'$BIN' --root '$R' tmpfiles 2>&1 | grep -q 'unknown user nosuchuser'"
 
+# ---- sysusers ----
+new_root
+printf 'root:x:0:0::/root:/bin/bash\nbin:x:1:1::/:/usr/bin/nologin\n' >"$R/etc/passwd"
+printf 'root:!*:20000::::::\nbin:!*:20000::::::\n' >"$R/etc/shadow"
+printf 'root:x:0:\nbin:x:1:\nwheel:x:998:\n' >"$R/etc/group"
+printf 'root:!::\nbin:!::\nwheel:!::\n' >"$R/etc/gshadow"
+printf 'SYS_UID_MIN 100\nSYS_UID_MAX 999\nSYS_GID_MIN 100\nSYS_GID_MAX 999\n' >"$R/etc/login.defs"
+mkdir -p "$R/usr/lib/sysusers.d"
+cat >"$R/usr/lib/sysusers.d/test.conf" <<'CONF'
+# a comment
+g netdev -
+u dhcpcd - "dhcpcd privilege separation" /var/lib/dhcpcd
+u messagebus 81 "System message bus"
+u polkitd 102:netdev "PolicyKit" - /usr/bin/nologin
+m dhcpcd netdev
+r - 500-900
+CONF
+clb sysusers >/dev/null
+check "sysusers: g takes the highest free ID" grep -qx 'netdev:x:999:dhcpcd' "$R/etc/group"
+check "sysusers: u with its own group, free in both files" grep -qx 'dhcpcd:x:997:997:dhcpcd privilege separation:/var/lib/dhcpcd:/usr/bin/nologin' "$R/etc/passwd"
+check "sysusers: u with a fixed ID" grep -qx 'messagebus:x:81:81:System message bus:/:/usr/bin/nologin' "$R/etc/passwd"
+check "sysusers: u UID:GROUP" grep -qx 'polkitd:x:102:999:PolicyKit:/:/usr/bin/nologin' "$R/etc/passwd"
+check "sysusers: locked shadow entries" grep -q '^dhcpcd:!\*:[0-9]*::::::$' "$R/etc/shadow"
+check "sysusers: gshadow members" grep -qx 'netdev:!::dhcpcd' "$R/etc/gshadow"
+check "sysusers: shadow stays 0600" test "$(stat -c %a "$R/etc/shadow")" = 600
+sum=$(cat "$R"/etc/{passwd,shadow,group,gshadow} | cksum)
+clb sysusers >/dev/null
+check "sysusers: a second run changes nothing" test "$(cat "$R"/etc/{passwd,shadow,group,gshadow} | cksum)" = "$sum"
+printf 'u bad:name - "x"\n' >"$R/etc/sysusers.d.conf"
+check "sysusers: invalid names are refused" bash -c "! '$BIN' --root '$R' sysusers '$R/etc/sysusers.d.conf' 2>/dev/null"
+
 # ---- machine-id ----
 new_root
 clb machine-id

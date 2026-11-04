@@ -5,3 +5,4 @@ restart = false
 log-type = buffer
 depends-on: early-fstab
 waits-for: early-machine-id
+waits-for: early-sysusers

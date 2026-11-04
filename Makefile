@@ -32,7 +32,7 @@ ZSTD_LIBS := $(or $(shell $(PKG_CONFIG) --libs libzstd 2>/dev/null),-lzstd)
 ALL_CFLAGS = $(WARN) $(DEFS) $(KMOD_CFLAGS) $(BLKID_CFLAGS) $(ZSTD_CFLAGS) $(CPPFLAGS) $(CFLAGS)
 
 BOOT_OBJ = src/main.o src/util.o src/mounts.o src/sysctl.o src/modules.o src/misc.o src/tmpfiles.o \
-	src/tty.o src/kernel.o src/initramfs.o
+	src/tty.o src/kernel.o src/initramfs.o src/sysusers.o
 INIT_OBJ = src/init.o src/util.o src/mounts.o src/modules.o
 
 all: cleanlinux-boot cleanlinux-init
@@ -57,6 +57,7 @@ install: all
 	ln -sf ../../bin/cleanlinux-boot $(DESTDIR)$(DATADIR)/dinit/shutdown-hook
 	install -Dm644 data/tmpfiles.conf $(DESTDIR)$(DATADIR)/tmpfiles.d/cleanlinux-boot.conf
 	install -Dm644 data/burn.trigger $(DESTDIR)$(PREFIX)/share/burn/triggers/cleanlinux-boot.trigger
+	install -Dm644 data/sysusers.trigger $(DESTDIR)$(PREFIX)/share/burn/triggers/cleanlinux-sysusers.trigger
 	ln -sf dinit $(DESTDIR)$(BINDIR)/init
 
 dist:

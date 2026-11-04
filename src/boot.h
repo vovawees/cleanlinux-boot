@@ -43,6 +43,7 @@ int cmd_seed(int argc, char **argv);
 int cmd_clock(int argc, char **argv);
 int cmd_machine_id(int argc, char **argv);
 int cmd_tmpfiles(int argc, char **argv);
+int cmd_sysusers(int argc, char **argv);
 int cmd_udev(int argc, char **argv);
 int cmd_getty(int argc, char **argv);
 int cmd_consoles(int argc, char **argv);

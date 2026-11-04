@@ -1,0 +1,6 @@
+# the system users and groups of sysusers.d that are still missing (burn adds them at install)
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg sysusers
+restart = false
+log-type = buffer
+depends-on: early-root-rw
