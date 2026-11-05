@@ -49,7 +49,7 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
 | `modules`, `coldplug` | модули из `modules-load.d` и `modules-load=` через libkmod; coldplug по `modalias` — для initramfs и систем без udev |
 | `sysctl` | `sysctl.d` и `/etc/sysctl.conf`: поздние файлы побеждают, `-ключ` не считается ошибкой |
 | `hostname` | имя из `/etc/hostname`, по умолчанию `cleanlinux` |
-| `vconsole [--print]` | раскладка и шрифт консоли из `/etc/vconsole.conf` (`KEYMAP=`, `FONT=`, `FONT_MAP=`, `FONT_UNIMAP=`); `vconsole.keymap=` и `vconsole.font=` в командной строке ядра важнее; tty1–6 в режиме Unicode, шрифт на каждый; без файла ничего не меняется (`us`) |
+| `vconsole [--print]` | раскладка и шрифт консоли из `/etc/vconsole.conf` (`KEYMAP=`, `FONT=`, `FONT_MAP=`, `FONT_UNIMAP=`); `vconsole.keymap=` и `vconsole.font=` в командной строке ядра важнее; tty1–6 в режиме Unicode, шрифт на каждый; без файла ничего не меняется (`us`); без консоли, рисующей текст (только serial, `dummy device` в `/sys/class/vtconsole`), шрифт пропускается без ошибки |
 | `seed load\|save` | seed в `/var/lib/cleanlinux/random-seed`: подмешивается в пул без учёта как энтропия, сразу обновляется |
 | `clock load\|save` | RTC в локальном времени (`LOCAL` в adjtime), часы не раньше сборки и не раньше последнего выключения |
 | `machine-id` | `/etc/machine-id` при первой загрузке |

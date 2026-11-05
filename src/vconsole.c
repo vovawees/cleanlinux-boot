@@ -5,7 +5,10 @@
  * font needs them); vconsole.keymap= and vconsole.font= on the kernel command line win (a live
  * system started for another language). Every terminal gets the Unicode keyboard mode (the
  * kernel's console is UTF-8), the map is loaded once (it is shared by all of them) and the font
- * goes onto each one. Without the file nothing changes: the kernel's map is "us". */
+ * goes onto each one. Without the file nothing changes: the kernel's map is "us". A machine whose
+ * terminals have no console that draws text (a serial console only, QEMU's virt without a display:
+ * the kernel's "dummy device") has nowhere to load a font into: the map still goes in, the font is
+ * skipped and that is not an error. */
 #define _GNU_SOURCE
 #include "boot.h"
 
@@ -69,6 +72,31 @@ static bool plain_name(const char *s)
 	return true;
 }
 
+/* a bound console of /sys/class/vtconsole that is not the dummy one (fbcon, vgacon) takes a font;
+ * without that directory (a container, a test root) setfont is tried */
+static bool font_console(void)
+{
+	bool listed = false, drawn = false;
+	for (int i = 0; i < 16 && !drawn; i++) {
+		char *dir = xasprintf("/sys/class/vtconsole/vtcon%d", i);
+		char *np = xasprintf("%s/name", dir), *bp = xasprintf("%s/bind", dir);
+		char *rn = rpath(np), *rb = rpath(bp);
+		char *name = read_file(rn, NULL), *bind = read_file(rb, NULL);
+		if (name) {
+			listed = true;
+			drawn = bind && atoi(bind) == 1 && !strstr(name, "dummy");
+		}
+		free(name);
+		free(bind);
+		free(rn);
+		free(rb);
+		free(np);
+		free(bp);
+		free(dir);
+	}
+	return drawn || !listed;
+}
+
 static int act(bool dry, char *const argv[])
 {
 	if (dry) {
@@ -107,6 +135,12 @@ int cmd_vconsole(int argc, char **argv)
 	char *kbd_mode = dry ? xstrdup("kbd_mode") : find_program("kbd_mode");
 	char *loadkeys = dry ? xstrdup("loadkeys") : find_program("loadkeys");
 	char *setfont = dry ? xstrdup("setfont") : find_program("setfont");
+	if (v.font && !font_console()) {
+		if (!dry)
+			fprintf(stderr, "vconsole: no console that draws text, FONT=%s is not loaded\n", v.font);
+		free(v.font);
+		v.font = NULL;
+	}
 	for (int n = 1; n <= VTS && (v.keymap || v.font) && !(v.font && !setfont && n > 1); n++) {
 		char *tty = xasprintf("/dev/tty%d", n), *dev = rpath(tty);
 		bool there = exists(dev);

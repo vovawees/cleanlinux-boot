@@ -442,6 +442,15 @@ check "vconsole: the map once" test "$(grep -c '^loadkeys -q -u ruwin_alt_sh-UTF
 check "vconsole: the font on each terminal" test "$(grep -c '^setfont -C /dev/tty[1-6] cyr-sun16$' <<<"$out")" = 6
 check "vconsole: the Unicode keyboard mode" grep -q '^kbd_mode -u -C /dev/tty1$' <<<"$out"
 check "vconsole: the command line wins" bash -c "CLEANLINUX_CMDLINE='quiet vconsole.keymap=de' '$BIN' --root '$R' vconsole --print | grep -qx 'loadkeys -q -u de'"
+mkdir -p "$R/sys/class/vtconsole/vtcon0" "$R/sys/class/vtconsole/vtcon1"
+printf '(S) dummy device\n' >"$R/sys/class/vtconsole/vtcon0/name"
+printf '1\n' >"$R/sys/class/vtconsole/vtcon0/bind"
+out=$(clb vconsole --print)
+check "vconsole: no font on the dummy console" bash -c "! grep -q '^setfont' <<<'$out'"
+check "vconsole: the map without a font console" grep -qx 'loadkeys -q -u ruwin_alt_sh-UTF-8' <<<"$out"
+printf '(M) frame buffer device\n' >"$R/sys/class/vtconsole/vtcon1/name"
+printf '1\n' >"$R/sys/class/vtconsole/vtcon1/bind"
+check "vconsole: the font on the framebuffer console" test "$(clb vconsole --print | grep -c '^setfont -C /dev/tty[1-6] cyr-sun16$')" = 6
 printf 'KEYMAP=--help\n' >"$R/etc/vconsole.conf"
 check "vconsole: an option is not a map name" bash -c "! '$BIN' --root '$R' vconsole --print 2>/dev/null"
 
