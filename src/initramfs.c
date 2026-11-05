@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: MIT */
-/* initramfs: a small initramfs for the systems that cannot boot without one (an encrypted
- * root, storage drivers built as modules). Everything else boots the kernel straight from
+/* initramfs: a small initramfs for the systems that cannot boot without one (a live system,
+ * storage drivers built as modules). Everything else boots the kernel straight from
  * root=PARTUUID=, with the drivers of the root built in.
  *
  * Configuration: *.conf of cleanlinux/initramfs.d in /etc, /run and /usr/lib (profiles),
  * lines of KEY=VALUE, the lists add up:
- *   modules=nvme dm-crypt     modules (or aliases), with their dependencies and firmware,
+ *   modules=nvme              modules (or aliases), with their dependencies and firmware,
  *                             loaded before the root is looked for; a missing one is an error
  *   optional=panel-foo pwm_bl modules packed when the kernel has them (the drivers of one of
  *                             several boards), loaded by coldplug for the devices present
- *   files=/usr/bin/cryptsetup programs and files, ELF programs with their libraries
+ *   files=/usr/bin/btrfs      programs and files, ELF programs with their libraries
  *   compress=zstd|none
  * Without any modules= or files= no initramfs is wanted ("enable=yes" makes an empty one);
  * optional= alone does not make one, it only adds to an initramfs wanted for other reasons.

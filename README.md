@@ -3,14 +3,14 @@
 Загрузка [CleanLinux](https://github.com/vovawees/CleanLinux) под [dinit](https://github.com/davmac314/dinit):
 декларативные сервисы и один небольшой помощник на C вместо shell-скриптов. Плюс всё, что нужно ядру на
 пути к экрану входа: ядро в загрузочный раздел под загрузчик устройства (systemd-boot, U-Boot extlinux,
-прошивка Raspberry Pi, Android boot.img), маленький initramfs для тех, кому он нужен, и live-загрузка с ISO-образа.
+прошивка Raspberry Pi, Android boot.img), маленький initramfs для тех, кому он нужен, и live-загрузка с флешки (btrfs/ext4).
 
 *English summary: dinit services and a small C helper for booting CleanLinux — API filesystems, fsck,
 fstab, udev coldplug, modules via libkmod, sysctl, hostname, console keymap and font, random seed, clock, tmpfiles, sysusers, getty on VTs
 and serial consoles, swap on zram, backlight, power settings, clean shutdown; kernels into the boot partition for the
 loader of the device (systemd-boot entries, U-Boot extlinux.conf, Raspberry Pi config.txt, Android boot images v0–v2 with
-safe flashing), device trees and overlays; an optional initramfs (LUKS, modular storage, live boot from a squashfs image
-on an ISO or USB stick with a tmpfs overlay, optionally copied to RAM). C17, libkmod, libblkid,
+safe flashing), device trees and overlays; an optional initramfs (modular storage, live boot from the btrfs/ext4 partition
+of a USB image with layers under a tmpfs overlay, optionally copied to RAM). C17, libkmod, libblkid,
 libzstd. MIT.*
 
 ## Порядок загрузки
@@ -131,47 +131,53 @@ android.partition=/dev/disk/by-partlabel/boot_a
 
 ## initramfs
 
-Нужен только для зашифрованного корня или модульных драйверов накопителя. Он включается файлом в
+Нужен только live-системе и модульным драйверам накопителя. Он включается файлом в
 `/etc/cleanlinux/initramfs.d/` (или `/usr/lib/cleanlinux/initramfs.d/` из пакета профиля):
 
 ```
-modules=nvme dm-crypt        # загружаются до поиска корня; модуля нет в ядре — ошибка
-files=/usr/bin/cryptsetup    # программы (с их библиотеками) и файлы
+modules=nvme                 # загружаются до поиска корня; модуля нет в ядре — ошибка
+files=/usr/bin/btrfs         # программы (с их библиотеками) и файлы
 optional=panel-foo pwm_bl    # кладутся, если ядро их собрало; грузит coldplug, если есть устройство
 compress=zstd                # zstd | none
 ```
 
 `optional=` — для профилей, где одно ядро обслуживает много плат (драйверы экранов RK3566): нужный
-драйвер окажется в initramfs и запрос пароля LUKS будет виден на экране, а лишние не мешают. Сам по себе
+драйвер окажется в initramfs и сообщения загрузки будут видны на экране, а лишние не мешают. Сам по себе
 `optional=` initramfs не включает — только дополняет нужный по другой причине.
 
-Внутри — `cleanlinux-init` (PID 1: API ФС, модули и coldplug, `rd.luks.uuid=`, ожидание `root=` по
-`/dev/…`, `UUID=`, `LABEL=`, `PARTUUID=`, `PARTLABEL=`, `rootfstype=`, `rootflags=`, `ro`/`rw`, `init=`,
-`rd.break`), его библиотеки, модули с собственным индексом (`depmod -b`) и их firmware. Архив cpio
-отсортирован и датирован `SOURCE_DATE_EPOCH` — одинаковый вход даёт одинаковые байты.
+Внутри — `cleanlinux-init` (PID 1: API ФС, модули и coldplug, ожидание `root=` по `/dev/…`, `UUID=`,
+`LABEL=`, `PARTUUID=`, `PARTLABEL=`, `rootfstype=`, `rootflags=`, `ro`/`rw`, `init=`, `rd.break`), его
+библиотеки, модули с собственным индексом (`depmod -b`) и их firmware. Архив cpio отсортирован и датирован
+`SOURCE_DATE_EPOCH` — одинаковый вход даёт одинаковые байты. Шифрования корня (LUKS) нет: CleanLinux его
+не использует.
 
 ### Live-система: `root=live:`
 
-Так загружается ISO-образ CleanLinux — с флешки, записанной целиком, или с CD. `cleanlinux-init` ищет
-носитель `SPEC` (`LABEL=`, `UUID=`, `PARTUUID=`, `/dev/…`; с меткой ISO это и диск целиком, и его раздел,
-и `sr0` — подходит тот, на котором есть образ), подключает образ корня через loop только для чтения
-(squashfs или erofs) и кладёт сверху overlay с tmpfs: live-система пишет в память, носитель не меняется.
+Так загружается live-образ CleanLinux с флешки, записанной целиком (сырой GPT-образ: ESP и системный
+раздел). `cleanlinux-init` ищет раздел `SPEC` (`LABEL=CL_LIVE_…`, `UUID=`, `PARTUUID=`, `/dev/…`; подходит
+тот, на котором есть `@/usr`), монтирует его только для чтения (btrfs со сжатием zstd или ext4 — обычная
+файловая система, без squashfs и loop) и собирает корень overlay из слоёв с tmpfs сверху: live-система
+пишет в память, носитель не меняется.
 
 ```
-носитель (iso9660) ── /cleanlinux/live/rootfs.sfs ── loop ── squashfs ─┐
-                                                        tmpfs (upper) ─┴─ overlay ── /
+раздел CL_LIVE_… (btrfs/ext4, ro)
+  ├─ live/          слой live-системы (автологин, установщик)  ─┐
+  ├─ spins/NAME/    слой сборки (cleanlinux.live.spin=NAME)    ─┤ lowerdir
+  └─ @/             система — ровно то, что ставится на диск   ─┘
+                                            tmpfs (upper) ── overlay ── /
 ```
 
 | Параметр ядра | Что делает |
 |---|---|
-| `root=live:SPEC` | live-загрузка с носителя `SPEC` |
-| `cleanlinux.live.image=PATH` | образ на носителе, по умолчанию `/cleanlinux/live/rootfs.sfs` |
-| `cleanlinux.live.toram` | сначала скопировать образ в память (с процентами на экране), если он занимает не больше 70% свободной; после этого носитель можно вынуть |
+| `root=live:SPEC` | live-загрузка с раздела `SPEC` |
+| `cleanlinux.live.spin=NAME` | добавить слой сборки `spins/NAME` (например рабочий стол labwc) |
+| `cleanlinux.live.toram` | сначала скопировать весь раздел в память (с процентами на экране), если он занимает не больше 70% свободной; после этого носитель можно вынуть |
 | `rootwait`, `rootdelay=` | сколько ждать носитель (по умолчанию 30 с; медленные USB-флешки) |
 
-Модули `loop`, `squashfs`, `overlay`, `isofs`, `sr_mod`, `usb-storage`, `uas` загружаются, если они
-модулями собраны и лежат в initramfs (`modules=`/`optional=`). Всё смонтированное остаётся под
-`/run/cleanlinux/live` (`medium`, `rootfs`, `rw`, `toram`) и после перехода в корень.
+Модули `loop`, `overlay`, `btrfs`, `ext4`, `usb-storage`, `uas` загружаются, если они модулями собраны и
+лежат в initramfs (`modules=`/`optional=`). Всё смонтированное остаётся под `/run/cleanlinux/live`
+(`medium` — раздел, `rw`, `toram`) и после перехода в корень: `cleanlinux-install` копирует систему из
+`/run/cleanlinux/live/medium/@`.
 
 ## Память и питание
 

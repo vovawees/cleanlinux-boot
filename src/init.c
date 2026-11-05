@@ -1,18 +1,19 @@
 /* SPDX-License-Identifier: MIT */
 /* cleanlinux-init: PID 1 of the initramfs that "cleanlinux-boot initramfs" makes.
  *
- * Only systems that cannot boot without one need it (an encrypted root, storage drivers that
- * are modules): it mounts the API filesystems, loads the modules listed in the initramfs and
- * the drivers of the devices it finds, opens LUKS (rd.luks.uuid=, with cryptsetup in the
- * initramfs), waits for root= (/dev/..., UUID=, LABEL=, PARTUUID=, PARTLABEL=), mounts it
- * with rootfstype=, rootflags=, ro/rw, and hands over to init= (default /sbin/init).
- * rd.break drops to a shell (when the initramfs has one) right before the switch.
+ * Only systems that cannot boot without one need it (storage drivers that are modules, a live
+ * system): it mounts the API filesystems, loads the modules listed in the initramfs and the
+ * drivers of the devices it finds, waits for root= (/dev/..., UUID=, LABEL=, PARTUUID=,
+ * PARTLABEL=), mounts it with rootfstype=, rootflags=, ro/rw, and hands over to init= (default
+ * /sbin/init). rd.break drops to a shell (when the initramfs has one) right before the switch.
  *
- * root=live:SPEC boots a live system instead (the CleanLinux ISO): the medium SPEC (LABEL= of the
- * ISO 9660 image on a USB stick or a CD, or any filesystem) holds a squashfs image of the root
- * (cleanlinux.live.image=, default /cleanlinux/live/rootfs.sfs); the root is an overlay of it with
- * a tmpfs on top, so the live system writes into memory. cleanlinux.live.toram copies the image
- * into memory first, and the medium can be removed. Mounts stay below /run/cleanlinux/live. */
+ * root=live:SPEC boots a live system instead (the CleanLinux live USB image): SPEC (LABEL=CL_LIVE_...)
+ * names its system partition, btrfs or ext4, with the system in @/ (exactly what cleanlinux-install
+ * copies to a disk), the live layer in live/ (autologin, the installer at login) and the spins'
+ * layers in spins/NAME/. The root is an overlay of live/ (and spins/NAME/ with
+ * cleanlinux.live.spin=NAME) over @/ with a tmpfs on top, so the live system writes into memory.
+ * cleanlinux.live.toram copies the whole partition into memory first, and the medium can be
+ * removed. Mounts stay below /run/cleanlinux/live (medium/: the partition). */
 #define _GNU_SOURCE
 #include "boot.h"
 
@@ -188,40 +189,6 @@ static long root_timeout(void)
 	return t;
 }
 
-/* rd.luks.uuid=UUID: cryptsetup open UUID=... luks-UUID (it asks for the passphrase on the
- * console); the root is then root=/dev/mapper/luks-UUID or the UUID of what is inside */
-static void open_luks(void)
-{
-	char *uuid = cmdline_value("rd.luks.uuid");
-	if (!uuid || !*uuid) {
-		free(uuid);
-		return;
-	}
-	if (str_prefix(uuid, "luks-"))
-		memmove(uuid, uuid + 5, strlen(uuid + 5) + 1);
-	char *spec = xasprintf("UUID=%s", uuid), *name = xasprintf("luks-%s", uuid);
-	char *mapped = xasprintf("/dev/mapper/%s", name);
-	const char *cs = access("/usr/bin/cryptsetup", X_OK) == 0 ? "/usr/bin/cryptsetup" : NULL;
-	if (exists(mapped)) {
-		/* already open */
-	} else if (!cs) {
-		warnx("rd.luks.uuid=%s, but the initramfs has no cryptsetup (files=/usr/bin/cryptsetup)", uuid);
-	} else {
-		char *dev = wait_for(spec, root_timeout());
-		if (!dev)
-			emergency("the encrypted device did not appear");
-		for (int tries = 0; tries < 3 && !exists(mapped); tries++)
-			runl(cs, "open", "--type", "luks", dev, name, (char *)NULL);
-		free(dev);
-		if (!exists(mapped))
-			emergency("could not open the encrypted device");
-	}
-	free(mapped);
-	free(name);
-	free(spec);
-	free(uuid);
-}
-
 /* DEV on DIR as FSTYPE, or as each filesystem the kernel has (as the kernel does it for the root) */
 static int mount_dev(const char *dev, const char *dir, const char *fstype, unsigned long flags, const char *data)
 {
@@ -247,12 +214,14 @@ static int mount_dev(const char *dev, const char *dir, const char *fstype, unsig
 /* ---- the live system: root=live:SPEC ---- */
 
 #define LIVE_DIR "/run/cleanlinux/live"
-#define LIVE_IMAGE "/cleanlinux/live/rootfs.sfs"
+#define LIVE_SYSTEM "/@"    /* the system, exactly as cleanlinux-install copies it to a disk */
+#define LIVE_LAYER "/live"  /* the files that make it a live system, over the system */
+#define LIVE_SPINS "/spins" /* spins/NAME: the files a spin adds (a desktop...), a layer each */
 
 /* the drivers of a live boot, when they are modules (built in: nothing to do) */
 static void live_modules(void)
 {
-	static const char *const names[] = {"loop", "squashfs", "overlay", "isofs", "sr_mod", "uas", "usb-storage"};
+	static const char *const names[] = {"loop", "overlay", "btrfs", "ext4", "uas", "usb-storage"};
 	if (!kctx)
 		return;
 	strv v = STRV_INIT;
@@ -262,16 +231,17 @@ static void live_modules(void)
 	strv_free(&v);
 }
 
-/* the medium: the first device SPEC names that has IMAGE, mounted read-only on DIR; NULL when
- * none appears in TIMEOUT_MS (< 0: forever). Devices come late (USB), so they are looked for
- * again and again, loading the drivers of new devices meanwhile */
-static char *live_medium(const char *spec, const char *image, const char *dir, long timeout_ms)
+/* the medium: the first device SPEC names whose filesystem holds the system (@/usr), mounted
+ * read-only on DIR; NULL when none appears in TIMEOUT_MS (< 0: forever). Devices come late
+ * (USB), so they are looked for again and again, loading the drivers of new devices meanwhile */
+static char *live_medium(const char *spec, const char *dir, long timeout_ms)
 {
-	strv without = STRV_INIT; /* mounted, but without the image: not this one */
+	strv without = STRV_INIT; /* mounted, but without the system: not this one */
 	long waited = 0;
 	bool told = false;
 	int err = 0;
 	mkdir_p(dir, 0755);
+	char *usr = xasprintf("%s%s/usr", dir, LIVE_SYSTEM);
 	for (;;) {
 		strv devs = STRV_INIT;
 		resolve_all(spec, &devs, false);
@@ -282,16 +252,14 @@ static char *live_medium(const char *spec, const char *image, const char *dir, l
 				err = errno;
 				continue;
 			}
-			char *img = xasprintf("%s%s", dir, image);
-			bool ok = is_file(img);
-			free(img);
-			if (ok) {
+			if (is_dir(usr)) {
 				char *dev = xstrdup(devs.v[i]);
 				strv_free(&devs);
 				strv_free(&without);
+				free(usr);
 				return dev;
 			}
-			warnx("%s has no %s", devs.v[i], image);
+			warnx("%s has no system (%s/usr)", devs.v[i], LIVE_SYSTEM);
 			umount2(dir, 0);
 			strv_push(&without, devs.v[i]);
 		}
@@ -310,6 +278,7 @@ static char *live_medium(const char *spec, const char *image, const char *dir, l
 	if (err)
 		warnx("mounting the medium: %s", strerror(err));
 	strv_free(&without);
+	free(usr);
 	return NULL;
 }
 
@@ -380,6 +349,20 @@ static unsigned long long mem_available(void)
 	return kib * 1024;
 }
 
+/* the size of the block device DEV in bytes (0: unknown) */
+static unsigned long long dev_size(const char *dev)
+{
+	unsigned long long n = 0;
+	int fd = open(dev, O_RDONLY | O_CLOEXEC);
+	if (fd >= 0) {
+		uint64_t b;
+		if (ioctl(fd, BLKGETSIZE64, &b) == 0)
+			n = b;
+		close(fd);
+	}
+	return n;
+}
+
 /* SRC into DST (a new file), with the progress in tens of percent */
 static int copy_progress(const char *src, const char *dst, unsigned long long size)
 {
@@ -429,18 +412,73 @@ static int copy_progress(const char *src, const char *dst, unsigned long long si
 	return rc;
 }
 
-/* the root of a live system on NEW_ROOT: medium -> squashfs image (in memory with toram) ->
- * overlay with a tmpfs on top */
+/* cleanlinux.live.toram: the whole partition DEV into a tmpfs, mounted on DIR from there (a loop
+ * device) instead of from the medium, which can then be removed. False when it does not fit or
+ * fails: the medium stays mounted on DIR */
+static bool live_toram(const char *dev, const char *dir)
+{
+	unsigned long long size = dev_size(dev), avail = mem_available();
+	const char *ram_dir = LIVE_DIR "/toram";
+	if (!size || (avail && size > avail / 10 * 7)) {
+		warnx("cleanlinux.live.toram: the system (%llu MiB) does not fit into memory (%llu MiB available), "
+		      "it stays on the medium",
+		      size >> 20, avail >> 20);
+		return false;
+	}
+	mkdir_p(ram_dir, 0755);
+	char *opts = xasprintf("mode=0755,size=%llu", size + (16ULL << 20));
+	int r = mount("tmpfs", ram_dir, "tmpfs", MS_NOSUID | MS_NODEV, opts);
+	free(opts);
+	if (r < 0) {
+		warn_errno("mounting a tmpfs on %s", ram_dir);
+		return false;
+	}
+	char *copy = xasprintf("%s/medium.img", ram_dir);
+	bool ok = false;
+	if (copy_progress(dev, copy, size) < 0) {
+		warn_errno("copying %s into memory", dev);
+	} else if (umount2(dir, 0) < 0) {
+		warn_errno("unmounting %s", dir);
+	} else {
+		int lfd = -1;
+		char *loop = loop_attach(copy, &lfd);
+		if (loop && mount_dev(loop, dir, NULL, MS_RDONLY, NULL) == 0) {
+			ok = true;
+			msg("the live system runs from memory: the medium %s can be removed", dev);
+		} else {
+			warnx("cannot mount the copy in memory, the system stays on the medium");
+			if (mount_dev(dev, dir, NULL, MS_RDONLY, NULL) < 0)
+				emergency("cannot mount the live medium again");
+		}
+		if (lfd >= 0)
+			close(lfd);
+		free(loop);
+	}
+	free(copy);
+	if (!ok)
+		umount2(ram_dir, MNT_DETACH);
+	return ok;
+}
+
+/* a spin name of cleanlinux.live.spin=: a directory name, nothing else */
+static bool spin_name_ok(const char *s)
+{
+	if (!*s || *s == '.')
+		return false;
+	for (; *s; s++)
+		if (!((*s >= 'a' && *s <= 'z') || (*s >= '0' && *s <= '9') || strchr("+-_.", *s)))
+			return false;
+	return true;
+}
+
+/* the root of a live system on NEW_ROOT: the medium (a btrfs or ext4 partition of the live
+ * image; in memory with toram) -> an overlay of its layers, the live layer over a spin's over the
+ * system, with a tmpfs on top */
 static void live_root(const char *spec)
 {
 	live_modules();
-	char *image = cmdline_value("cleanlinux.live.image");
-	if (!image || !*image) {
-		free(image);
-		image = xstrdup(LIVE_IMAGE);
-	}
-	const char *medium_dir = LIVE_DIR "/medium";
-	char *dev = live_medium(spec, image, medium_dir, root_timeout());
+	const char *medium = LIVE_DIR "/medium";
+	char *dev = live_medium(spec, medium, root_timeout());
 	if (!dev) {
 		char *why = xasprintf("the live medium %s did not appear (the image must be written to the whole "
 				      "stick as it is, with dd or a raw writer, not copied as a file)",
@@ -448,68 +486,50 @@ static void live_root(const char *spec)
 		emergency(why);
 	}
 	msg("live medium %s", dev);
-	char *img = xasprintf("%s%s", medium_dir, image);
 	char *toram = cmdline_value("cleanlinux.live.toram");
-	if (toram && strcmp(toram, "0") && strcmp(toram, "no")) {
-		struct stat st;
-		unsigned long long size = stat(img, &st) == 0 ? (unsigned long long)st.st_size : 0;
-		unsigned long long avail = mem_available();
-		const char *ram_dir = LIVE_DIR "/toram";
-		char *opts = xasprintf("mode=0755,size=%llu", size + (16ULL << 20));
-		mkdir_p(ram_dir, 0755);
-		if (!size || (avail && size > avail / 10 * 7)) {
-			warnx("cleanlinux.live.toram: the image (%llu MiB) does not fit into memory (%llu MiB available), "
-			      "it stays on the medium",
-			      size >> 20, avail >> 20);
-		} else if (mount("tmpfs", ram_dir, "tmpfs", MS_NOSUID | MS_NODEV, opts) < 0) {
-			warn_errno("mounting a tmpfs on %s", ram_dir);
-		} else {
-			char *copy = xasprintf("%s/rootfs.sfs", ram_dir);
-			if (copy_progress(img, copy, size) == 0) {
-				free(img);
-				img = copy;
-				copy = NULL;
-				if (umount2(medium_dir, MNT_DETACH) == 0)
-					msg("the live system runs from memory: the medium %s can be removed", dev);
-			} else {
-				warn_errno("copying %s into memory", img);
-				umount2(ram_dir, MNT_DETACH);
-			}
-			free(copy);
-		}
-		free(opts);
-	}
+	if (toram && strcmp(toram, "0") && strcmp(toram, "no"))
+		live_toram(dev, medium);
 	free(toram);
-	const char *lower = LIVE_DIR "/rootfs", *rw = LIVE_DIR "/rw";
-	mkdir_p(lower, 0755);
-	int lfd = -1;
-	char *loop = loop_attach(img, &lfd);
-	if (!loop)
-		emergency("no loop device for the live image");
-	static const char *const types[] = {"squashfs", "erofs"};
-	int r = -1;
-	for (size_t i = 0; r < 0 && i < ARRAY_LEN(types); i++)
-		r = mount_dev(loop, lower, types[i], MS_RDONLY, NULL);
-	if (r < 0) {
-		char *why = xasprintf("cannot mount the live image %s: %s", img, strerror(errno));
-		emergency(why);
+
+	/* the layers, the uppermost first */
+	char *lower = NULL, *spin = cmdline_value("cleanlinux.live.spin"), *p;
+	p = xasprintf("%s%s", medium, LIVE_LAYER);
+	if (is_dir(p))
+		lower = xstrdup(p);
+	free(p);
+	if (spin && *spin) {
+		p = spin_name_ok(spin) ? xasprintf("%s%s/%s", medium, LIVE_SPINS, spin) : NULL;
+		if (p && is_dir(p)) {
+			char *l = lower ? xasprintf("%s:%s", lower, p) : xstrdup(p);
+			free(lower);
+			lower = l;
+		} else {
+			warnx("cleanlinux.live.spin=%s: the medium has no such spin", spin);
+			free(spin);
+			spin = NULL;
+		}
+		free(p);
 	}
-	close(lfd);
+	p = lower ? xasprintf("%s:%s%s", lower, medium, LIVE_SYSTEM) : xasprintf("%s%s", medium, LIVE_SYSTEM);
+	free(lower);
+	lower = p;
+
+	const char *rw = LIVE_DIR "/rw";
 	mkdir_p(rw, 0755);
 	if (mount("tmpfs", rw, "tmpfs", 0, "mode=0755") < 0)
 		emergency("cannot mount the tmpfs of the live system");
 	mkdir_p(LIVE_DIR "/rw/upper", 0755);
 	mkdir_p(LIVE_DIR "/rw/work", 0755);
 	mkdir_p(NEW_ROOT, 0755);
-	if (mount("overlay", NEW_ROOT, "overlay", 0,
-		  "lowerdir=" LIVE_DIR "/rootfs,upperdir=" LIVE_DIR "/rw/upper,workdir=" LIVE_DIR "/rw/work") < 0) {
+	char *opts = xasprintf("lowerdir=%s,upperdir=" LIVE_DIR "/rw/upper,workdir=" LIVE_DIR "/rw/work", lower);
+	if (mount("overlay", NEW_ROOT, "overlay", 0, opts) < 0) {
 		char *why = xasprintf("cannot mount the overlay of the live system: %s", strerror(errno));
 		emergency(why);
 	}
-	msg("live system: %s from %s", image, dev);
-	free(loop);
-	free(img);
-	free(image);
+	msg("live system from %s%s%s", dev, spin && *spin ? ", spin " : "", spin && *spin ? spin : "");
+	free(opts);
+	free(lower);
+	free(spin);
 	free(dev);
 }
 
@@ -618,7 +638,6 @@ int main(void)
 		}
 		modules_coldplug(kctx);
 	}
-	open_luks();
 	char *spec = cmdline_value("root");
 	if (!spec || !*spec)
 		emergency("no root= on the kernel command line");
