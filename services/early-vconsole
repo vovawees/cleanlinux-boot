@@ -1,0 +1,7 @@
+# the keyboard map and font of the virtual terminals: KEYMAP= and FONT= of /etc/vconsole.conf
+type = scripted
+command = /usr/bin/cleanlinux-boot --kmsg vconsole
+restart = false
+log-type = buffer
+depends-on: early-mounts
+waits-for: early-udev-settle

@@ -5,7 +5,7 @@
 #   make install         DESTDIR=... PREFIX=/usr
 #   make dist            cleanlinux-boot-VERSION.tar.gz from git HEAD
 
-VERSION := 0.3.1
+VERSION := 0.4.0
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 LIBEXECDIR ?= $(PREFIX)/lib/cleanlinux-boot
@@ -32,7 +32,7 @@ ZSTD_LIBS := $(or $(shell $(PKG_CONFIG) --libs libzstd 2>/dev/null),-lzstd)
 ALL_CFLAGS = $(WARN) $(DEFS) $(KMOD_CFLAGS) $(BLKID_CFLAGS) $(ZSTD_CFLAGS) $(CPPFLAGS) $(CFLAGS)
 
 BOOT_OBJ = src/main.o src/util.o src/mounts.o src/sysctl.o src/modules.o src/misc.o src/tmpfiles.o \
-	src/tty.o src/kernel.o src/bootimg.o src/initramfs.o src/sysusers.o src/power.o
+	src/tty.o src/kernel.o src/bootimg.o src/initramfs.o src/sysusers.o src/power.o src/vconsole.o
 INIT_OBJ = src/init.o src/util.o src/mounts.o src/modules.o
 
 all: cleanlinux-boot cleanlinux-init

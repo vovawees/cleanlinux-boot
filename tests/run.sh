@@ -417,6 +417,18 @@ printf 'turbo=yes\n' >"$R/etc/cleanlinux/power.d/95-bad.conf"
 check "power: an unknown setting fails" bash -c "! '$BIN' --root '$R' power 2>/dev/null"
 check "power --print" test "$(clb power --print 2>/dev/null | head -2 | tr '\n' ' ')" = "platform_profile=balanced epp=balance_power "
 
+# ---- vconsole ----
+new_root
+check "vconsole: nothing without vconsole.conf" test -z "$(clb vconsole --print)"
+printf '# keyboard\nKEYMAP="ruwin_alt_sh-UTF-8"\nFONT=cyr-sun16\n' >"$R/etc/vconsole.conf"
+out=$(clb vconsole --print)
+check "vconsole: the map once" test "$(grep -c '^loadkeys -q -u ruwin_alt_sh-UTF-8$' <<<"$out")" = 1
+check "vconsole: the font on each terminal" test "$(grep -c '^setfont -C /dev/tty[1-6] cyr-sun16$' <<<"$out")" = 6
+check "vconsole: the Unicode keyboard mode" grep -q '^kbd_mode -u -C /dev/tty1$' <<<"$out"
+check "vconsole: the command line wins" bash -c "CLEANLINUX_CMDLINE='quiet vconsole.keymap=de' '$BIN' --root '$R' vconsole --print | grep -qx 'loadkeys -q -u de'"
+printf 'KEYMAP=--help\n' >"$R/etc/vconsole.conf"
+check "vconsole: an option is not a map name" bash -c "! '$BIN' --root '$R' vconsole --print 2>/dev/null"
+
 # ---- the services ----
 SVC=$(dirname "$BIN")/services
 DINIT_CHECK=$(command -v dinit-check || true)

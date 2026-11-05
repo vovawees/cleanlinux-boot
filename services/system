@@ -4,6 +4,7 @@ depends-on: early-fstab
 waits-for: early-udev-settle
 waits-for: early-modules
 waits-for: early-hostname
+waits-for: early-vconsole
 waits-for: early-sysctl
 waits-for: early-seed
 waits-for: early-clock

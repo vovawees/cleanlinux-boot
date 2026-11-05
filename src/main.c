@@ -36,6 +36,7 @@ static const struct {
 	{"zram", cmd_zram, "start|stop|--print: swap in compressed RAM, sized by the RAM (zram.d)"},
 	{"backlight", cmd_backlight, "load|save the brightness of the backlights"},
 	{"power", cmd_power, "apply power.d: platform profile, CPU governor and EPP, charge and power limits [--print]"},
+	{"vconsole", cmd_vconsole, "the keyboard map and font of the virtual terminals (vconsole.conf) [--print]"},
 	{"shutdown-hook", cmd_shutdown_hook, "swap off, unmount, remount the root read-only"},
 };
 
