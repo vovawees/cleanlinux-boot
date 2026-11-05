@@ -5,7 +5,7 @@
 #   make install         DESTDIR=... PREFIX=/usr
 #   make dist            cleanlinux-boot-VERSION.tar.gz from git HEAD
 
-VERSION := 0.4.0
+VERSION := 0.4.1
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 LIBEXECDIR ?= $(PREFIX)/lib/cleanlinux-boot

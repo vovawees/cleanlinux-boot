@@ -232,7 +232,9 @@ static int mount_dev(const char *dev, const char *dir, const char *fstype, unsig
 	for (char *save = NULL, *l = fs ? strtok_r(fs, "\n", &save) : NULL; l && r < 0; l = strtok_r(NULL, "\n", &save)) {
 		if (str_prefix(l, "nodev"))
 			continue;
-		r = mount(dev, dir, trim(l), flags, data);
+		/* MS_SILENT, as the kernel tries them: no "VFS: Can't find ext4 filesystem" on the
+		 * console for every filesystem that is not this one */
+		r = mount(dev, dir, trim(l), flags | MS_SILENT, data);
 		if (r < 0 && errno != EINVAL)
 			err = errno; /* the error of a filesystem that recognized it, not "not mine" */
 	}
