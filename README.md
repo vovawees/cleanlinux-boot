@@ -162,7 +162,8 @@ compress=zstd                # zstd | none
 ```
 раздел CL_LIVE_… (btrfs/ext4, ro)
   ├─ live/          слой live-системы (автологин, установщик)  ─┐
-  ├─ spins/NAME/    слой сборки (cleanlinux.live.spin=NAME)    ─┤ lowerdir
+  ├─ spins/NAME/    слой сборки (cleanlinux.live.spin=NAME)    ─┤
+  ├─ nonfree/       проприетарные драйверы и прошивки          ─┤ lowerdir
   └─ @/             система — ровно то, что ставится на диск   ─┘
                                             tmpfs (upper) ── overlay ── /
 ```
@@ -171,6 +172,7 @@ compress=zstd                # zstd | none
 |---|---|
 | `root=live:SPEC` | live-загрузка с раздела `SPEC` |
 | `cleanlinux.live.spin=NAME` | добавить слой сборки `spins/NAME` (например рабочий стол labwc) |
+| `cleanlinux.live.nonfree=0` | без слоя `nonfree/` (проприетарные драйверы подключены по умолчанию) |
 | `cleanlinux.live.toram` | сначала скопировать весь раздел в память (с процентами на экране), если он занимает не больше 70% свободной; после этого носитель можно вынуть |
 | `rootwait`, `rootdelay=` | сколько ждать носитель (по умолчанию 30 с; медленные USB-флешки) |
 

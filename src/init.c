@@ -9,9 +9,10 @@
  *
  * root=live:SPEC boots a live system instead (the CleanLinux live USB image): SPEC (LABEL=CL_LIVE_...)
  * names its system partition, btrfs or ext4, with the system in @/ (exactly what cleanlinux-install
- * copies to a disk), the live layer in live/ (autologin, the installer at login) and the spins'
- * layers in spins/NAME/. The root is an overlay of live/ (and spins/NAME/ with
- * cleanlinux.live.spin=NAME) over @/ with a tmpfs on top, so the live system writes into memory.
+ * copies to a disk), the proprietary drivers in nonfree/, the live layer in live/ (autologin, the
+ * installer at login) and the spins' layers in spins/NAME/. The root is an overlay of live/ (and
+ * spins/NAME/ with cleanlinux.live.spin=NAME) over nonfree/ (left out with
+ * cleanlinux.live.nonfree=0) over @/, with a tmpfs on top: the live system writes into memory.
  * cleanlinux.live.toram copies the whole partition into memory first, and the medium can be
  * removed. Mounts stay below /run/cleanlinux/live (medium/: the partition). */
 #define _GNU_SOURCE
@@ -217,6 +218,7 @@ static int mount_dev(const char *dev, const char *dir, const char *fstype, unsig
 #define LIVE_SYSTEM "/@"    /* the system, exactly as cleanlinux-install copies it to a disk */
 #define LIVE_LAYER "/live"  /* the files that make it a live system, over the system */
 #define LIVE_SPINS "/spins" /* spins/NAME: the files a spin adds (a desktop...), a layer each */
+#define LIVE_NONFREE "/nonfree" /* the proprietary drivers and firmware, a layer over the system */
 
 /* the drivers of a live boot, when they are modules (built in: nothing to do) */
 static void live_modules(void)
@@ -473,7 +475,7 @@ static bool spin_name_ok(const char *s)
 
 /* the root of a live system on NEW_ROOT: the medium (a btrfs or ext4 partition of the live
  * image; in memory with toram) -> an overlay of its layers, the live layer over a spin's over the
- * system, with a tmpfs on top */
+ * proprietary drivers' over the system, with a tmpfs on top */
 static void live_root(const char *spec)
 {
 	live_modules();
@@ -510,6 +512,17 @@ static void live_root(const char *spec)
 		}
 		free(p);
 	}
+	char *nonfree = cmdline_value("cleanlinux.live.nonfree");
+	if (!nonfree || (strcmp(nonfree, "0") && strcmp(nonfree, "no"))) {
+		p = xasprintf("%s%s", medium, LIVE_NONFREE);
+		if (is_dir(p)) {
+			char *l = lower ? xasprintf("%s:%s", lower, p) : xstrdup(p);
+			free(lower);
+			lower = l;
+		}
+		free(p);
+	}
+	free(nonfree);
 	p = lower ? xasprintf("%s:%s%s", lower, medium, LIVE_SYSTEM) : xasprintf("%s%s", medium, LIVE_SYSTEM);
 	free(lower);
 	lower = p;
