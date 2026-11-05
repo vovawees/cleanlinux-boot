@@ -143,6 +143,22 @@ new_root
 echo "tty0 ttyS0 ttyAMA0" >"$R/sys/class/tty/console/active"
 : >"$R/dev/ttyS0"
 check "consoles: serial consoles that exist" test "$(clb consoles --print)" = serial-getty@ttyS0
+mkdir -p "$R/usr/bin" "$R/etc/cleanlinux"
+printf '#!/bin/sh\necho "$*"\n' >"$R/usr/bin/agetty" && chmod +x "$R/usr/bin/agetty"
+printf 'root:x:0:0::/root:/bin/sh\nalice:x:1000:1000::/home/alice:/bin/sh\n' >"$R/etc/passwd"
+echo "console=ttyS0,115200" >"$R/proc/cmdline"
+check "getty: tty1 keeps the boot messages" test "$(clb getty tty1)" = "--noclear tty1 linux"
+check "getty: serial line at the speed of console=" test "$(clb getty /dev/ttyS0)" = "-L 115200 ttyS0 vt220"
+printf '# the user of tty1\n\n  alice  \n' >"$R/etc/cleanlinux/autologin"
+check "getty: autologin on tty1" test "$(clb getty tty1)" = "--noclear --autologin alice tty1 linux"
+check "getty: no autologin on tty2" test "$(clb getty tty2)" = "tty2 linux"
+echo "console=ttyS0,115200 cleanlinux.autologin=0" >"$R/proc/cmdline"
+check "getty: cleanlinux.autologin=0 turns it off" test "$(clb getty tty1)" = "--noclear tty1 linux"
+echo "" >"$R/proc/cmdline"
+echo root >"$R/etc/cleanlinux/autologin"
+check "getty: never root" test "$(clb getty tty1 2>/dev/null)" = "--noclear tty1 linux"
+echo bob >"$R/etc/cleanlinux/autologin"
+check "getty: only users of the system" test "$(clb getty tty1 2>/dev/null)" = "--noclear tty1 linux"
 
 # ---- kernel sync ----
 new_root

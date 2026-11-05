@@ -55,7 +55,7 @@ early-mounts ─┬─ early-udevd ── early-udev-trigger ── early-udev-s
 | `machine-id` | `/etc/machine-id` при первой загрузке |
 | `tmpfiles` | общее подмножество `tmpfiles.d(5)`: `d D f w L z r R`, модификаторы `! - +` |
 | `sysusers` | системные пользователи и группы из `sysusers.d(5)` (`u g m`, `r` принимается): недостающие дописываются в `passwd`, `shadow`, `group`, `gshadow` со свободными ID из `SYS_UID_MIN..SYS_UID_MAX`; учётные записи заблокированы |
-| `getty TTY`, `consoles` | agetty на VT и на последовательном порту (скорость из `console=`); serial-getty на каждую последовательную консоль ядра |
+| `getty TTY`, `consoles` | agetty на VT и на последовательном порту (скорость из `console=`); serial-getty на каждую последовательную консоль ядра; на tty1 — автоматический вход пользователя из `/etc/cleanlinux/autologin` (не root; `cleanlinux.autologin=0` в строке ядра отключает) |
 | `kernel sync\|list\|config` | ядра `/usr/lib/modules/*/vmlinuz` в загрузочный раздел под загрузчики из `boot.d`: записи systemd-boot, `extlinux.conf`, `config.txt` Raspberry Pi, Android boot.img; `config` — итоговые настройки |
 | `initramfs` | initramfs только там, где без него нельзя |
 | `zram start\|stop\|--print` | swap в сжатой памяти размером с RAM (не больше 8 ГиБ, zstd, приоритет 100) — если нет swap на диске; zswap при этом выключается |

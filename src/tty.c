@@ -114,8 +114,74 @@ static char *console_speed(const char *tty)
 	return speed;
 }
 
+/* a user name as useradd takes it: [a-z_][a-z0-9_-]*, up to 32 characters */
+static bool valid_user(const char *u)
+{
+	size_t n = strlen(u);
+	if (!n || n > 32 || !(islower((unsigned char)u[0]) || u[0] == '_'))
+		return false;
+	for (const char *s = u; *s; s++)
+		if (!(islower((unsigned char)*s) || isdigit((unsigned char)*s) || *s == '_' || *s == '-'))
+			return false;
+	return true;
+}
+
+/* is NAME a user of the root (its /etc/passwd), with a uid other than 0 */
+static bool system_user(const char *name)
+{
+	char *p = rpath("/etc/passwd"), *s = read_file(p, NULL);
+	free(p);
+	bool found = false;
+	size_t n = strlen(name);
+	for (char *line = s; line && *line && !found;) {
+		char *nl = strchr(line, '\n');
+		if (nl)
+			*nl = 0;
+		if (!strncmp(line, name, n) && line[n] == ':') {
+			const char *uid = strchr(line + n + 1, ':');
+			found = uid && strncmp(uid, ":0:", 3) != 0;
+		}
+		line = nl ? nl + 1 : NULL;
+	}
+	free(s);
+	return found;
+}
+
+/* the user who logs in on tty1 by itself: the first word of /etc/cleanlinux/autologin
+ * (cleanlinux-install writes it for handhelds, which have no keyboard for a password). Not
+ * root, only a user of the system, and not with cleanlinux.autologin=0 on the kernel command
+ * line (a way back to the login prompt) */
+static char *autologin_user(void)
+{
+	char *v = cmdline_value("cleanlinux.autologin");
+	bool off = v && !strcmp(v, "0");
+	free(v);
+	if (off)
+		return NULL;
+	char *p = rpath("/etc/cleanlinux/autologin"), *s = read_file(p, NULL), *user = NULL;
+	free(p);
+	for (char *line = s; line && *line && !user;) {
+		char *nl = strchr(line, '\n');
+		if (nl)
+			*nl = 0;
+		char *w = trim(line);
+		if (*w && *w != '#') {
+			w[strcspn(w, " \t")] = 0;
+			if (valid_user(w) && system_user(w))
+				user = xstrdup(w);
+			else
+				warnx("autologin: %s is not a user who may log in by itself (not root, in /etc/passwd)", w);
+			break;
+		}
+		line = nl ? nl + 1 : NULL;
+	}
+	free(s);
+	return user;
+}
+
 /* getty TTY: agetty on a virtual terminal (TERM=linux) or on a serial line (local line
- * without modem control, the speed of console= or a list agetty tries in turn) */
+ * without modem control, the speed of console= or a list agetty tries in turn); on tty1 the
+ * user of /etc/cleanlinux/autologin logs in without a password */
 int cmd_getty(int argc, char **argv)
 {
 	if (argc != 2)
@@ -130,9 +196,12 @@ int cmd_getty(int argc, char **argv)
 		die("agetty is not installed");
 	if (is_vt(tty)) {
 		/* the first terminal keeps the boot messages on screen */
-		if (!strcmp(tty, "tty1"))
+		if (!strcmp(tty, "tty1")) {
+			char *user = autologin_user();
+			if (user)
+				execl(agetty, "agetty", "--noclear", "--autologin", user, tty, "linux", (char *)NULL);
 			execl(agetty, "agetty", "--noclear", tty, "linux", (char *)NULL);
-		else
+		} else
 			execl(agetty, "agetty", tty, "linux", (char *)NULL);
 	} else {
 		char *speed = console_speed(tty);
